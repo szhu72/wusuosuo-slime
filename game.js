@@ -343,16 +343,12 @@ class SlimeTetris {
         this.applyFx(ctx, px, py, s, fx);
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         if (kind === 'star') {
-            // 星星面罩：兩眼各罩一顆星星，中間用橋連起來，眼睛露在面罩上
-            const ey = py + s * 0.45, R = s * 0.24, r = s * 0.12;
+            // 星星面罩：一顆大星星罩住整個眼睛區域，眼睛露在面罩上
+            const ey = py + s * 0.45, cx = px + s * 0.5, cy = py + s * 0.5, R = s * 0.47, r = s * 0.25;
             ctx.fillStyle = '#ffe066'; ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.045);
-            ctx.beginPath(); ctx.rect(px + s * 0.4, ey - s * 0.05, s * 0.2, s * 0.08); ctx.fill(); ctx.stroke();
-            [0.33, 0.67].forEach((dx) => {
-                const cx = px + s * dx;
-                ctx.beginPath();
-                for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r : R; ctx.lineTo(cx + Math.cos(a) * rr, ey + s * 0.02 + Math.sin(a) * rr); }
-                ctx.closePath(); ctx.fill(); ctx.stroke();
-            });
+            ctx.beginPath();
+            for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r : R; ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+            ctx.closePath(); ctx.fill(); ctx.stroke();
             [0.35, 0.65].forEach((dx) => {
                 ctx.fillStyle = '#1e272e'; ctx.beginPath(); ctx.arc(px + s * dx, ey, s * 0.09, 0, Math.PI * 2); ctx.fill();
                 ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px + s * dx - 1, ey - 1, s * 0.035, 0, Math.PI * 2); ctx.fill();
