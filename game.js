@@ -155,7 +155,9 @@ class SlimeTetris {
         this.SCORE_MUL = 1;
         this.SAFE_EVERY = 10000; this.SAFE_PIECES = 10;
         this.safeLeft = 0; this.nextSafeAt = this.SAFE_EVERY; this.safeAt = 0; this.dangerAt = 0;
-        if (this.bug) { this.SPECIAL_RATE = 1 / 5; this.QUEEN_SPAWN_EVERY = 1; this.LARVA_GROW_TURNS = 2; this.SCORE_MUL = 1.5; }
+        if (this.bug) { this.SPECIAL_RATE = 1 / 5; this.QUEEN_SPAWN_EVERY = 1; this.LARVA_GROW_TURNS = 2; this.SCORE_MUL = 1.5; this.QUEEN_MAX_LARVAE = 2; }
+        // 🐜 蟲萊姆通啦的壓力：幼蟲往上長（堆疊變高）、幼蟲長大時啃洞、每隻蟻后讓速度 +1 級、幼蟲要消 2 次
+        this.bugQueens = 0;
         this.clearMods = null;
         this.sfx = window.__slimeSfx || (window.__slimeSfx = new SlimeSFX());
         // 方向鍵長按：鍵盤 / 觸控分開設定（DAS＝開始連續移動前的等待，ARR＝之後每格間隔，毫秒）
@@ -323,6 +325,7 @@ class SlimeTetris {
         if (kind === 'twin') color = '#f4f4f4';        // 雙生：黑白各半
         this.drawSlimeBody(ctx, x, y, color, size, fx);
         if (kind) this.drawAccessory(ctx, x * size, y * size, size, kind, fx);
+        if (kind === 'larva' && String(cell).split('|')[3] === '1') this.drawAccessory(ctx, x * size, y * size, size, 'crack', fx);
     }
 
     applyFx(ctx, px, py, size, fx) {
@@ -402,6 +405,9 @@ class SlimeTetris {
                 ctx.lineTo(px + s * 0.6, y1 + s * 0.14); ctx.lineTo(px + s * 0.7, y1 + s * 0.08); ctx.lineTo(px + s * 0.7, y0); ctx.closePath(); ctx.fill();
                 ctx.lineWidth = Math.max(1, s * 0.04); ctx.stroke();
             }
+        } else if (kind === 'crack') {
+            ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.05);
+            ctx.beginPath(); ctx.moveTo(px + s * 0.2, py + s * 0.62); ctx.lineTo(px + s * 0.38, py + s * 0.72); ctx.lineTo(px + s * 0.5, py + s * 0.6); ctx.lineTo(px + s * 0.66, py + s * 0.76); ctx.lineTo(px + s * 0.82, py + s * 0.66); ctx.stroke();
         } else if (kind === 'hard') {
             ctx.fillStyle = '#9aa0b4';
             ctx.beginPath(); ctx.moveTo(px + s * 0.08, py + s * 0.42); ctx.quadraticCurveTo(px + s * 0.5, py - s * 0.12, px + s * 0.92, py + s * 0.42); ctx.closePath(); ctx.fill();
@@ -596,7 +602,7 @@ class SlimeTetris {
         const byLines = 1 + Math.floor(this.lines / this.LINES_PER_LEVEL);
         const byTime = this.opts.pvp ? 1 : 1 + Math.floor(this.playMs / this.TIME_PER_LEVEL);
         const ext = this.opts.minLevel ? this.opts.minLevel() : 1;
-        return Math.min(this.MAX_LEVEL, Math.max(byLines, byTime, ext));
+        return Math.min(this.MAX_LEVEL, Math.max(byLines, byTime, ext) + (this.bug ? this.bugQueens : 0));
     }
 
     // 等級越高，著地後可微調的時間越短，維持壓迫感
@@ -810,6 +816,23 @@ class SlimeTetris {
         }
         if (cracked) this.sfx.crack();
 
+        // 🐜 蟲萊姆通啦：滿行裡有「還沒裂開」的幼蟲 → 幼蟲外殼裂開，這次剛填進去的格子重新打開，要再消一次
+        if (this.bug) {
+            const placed = new Set();
+            this.piece.m.forEach((row, y) => row.forEach((v, x) => { if (v) placed.add(`${this.piece.y + y},${this.piece.x + x}`); }));
+            let shell = false;
+            for (let r = 0; r < this.ROWS; r++) {
+                const row = this.board[r];
+                if (!row.every(cell => cell !== 0)) continue;
+                const intact = row.map((cell, c) => (SlimeTetris.cellKind(cell) === 'larva' && String(cell).split('|')[3] !== '1') ? c : -1).filter(c => c >= 0);
+                if (!intact.length) continue;
+                intact.forEach((c) => { const p = String(row[c]).split('|'); row[c] = `${p[0]}|larva|${p[2] || 0}|1`; });
+                for (let c = 0; c < this.COLS; c++) if (placed.has(`${r},${c}`)) row[c] = 0;
+                shell = true;
+            }
+            if (shell) this.sfx.crack();
+        }
+
         // 有滿行 → 先播放消除動畫（史萊姆開心表情 + 閃爍消失），動畫結束才真正消除
         const full = [];
         for (let r = 0; r < this.ROWS; r++) if (this.board[r].every(cell => cell !== 0)) full.push(r);
@@ -905,6 +928,7 @@ class SlimeTetris {
     // 👑 蟻后回合處理（每鎖定一顆方塊呼叫一次，在消行之後）
     colonyTick() {
         if (!this.special) return;
+        if (this.bug) this.bugQueens = this.board.flat().filter(x => SlimeTetris.cellKind(x) === 'queen').length;
         if (this.safeLeft > 0) {   // 🛡 安全期：蟲不繁殖、不長大
             this.safeLeft--;
             if (this.safeLeft === 0) { this.dangerAt = performance.now(); this.sfx.hatch(); }
@@ -916,10 +940,17 @@ class SlimeTetris {
         for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
             const cell = this.board[r][c];
             if (SlimeTetris.cellKind(cell) !== 'larva') continue;
-            const age = (parseInt(String(cell).split('|')[2], 10) || 0) + 1;
+            const parts = String(cell).split('|');
+            const age = (parseInt(parts[2], 10) || 0) + 1;
             const color = SlimeTetris.cellColor(cell);
-            if (age >= this.LARVA_GROW_TURNS) { this.board[r][c] = `${color}|queen|0`; grew++; }
-            else this.board[r][c] = `${color}|larva|${age}`;
+            if (age >= this.LARVA_GROW_TURNS) {
+                this.board[r][c] = `${color}|queen|0`; grew++;
+                // 🐜 蟲萊姆通啦：長大時啃掉旁邊（左、右、下）一格一般史萊姆，打出缺口
+                if (this.bug) {
+                    const near = [[r, c - 1], [r, c + 1], [r + 1, c]].filter(([rr, cc]) => rr < this.ROWS && cc >= 0 && cc < this.COLS && this.board[rr][cc] && !SlimeTetris.cellKind(this.board[rr][cc]));
+                    if (near.length) { const [rr, cc] = near[Math.floor(this.queenRng() * near.length)]; this.board[rr][cc] = 0; }
+                }
+            } else this.board[r][c] = `${color}|larva|${age}${parts[3] === '1' ? '|1' : ''}`;
         }
         // 蟻后滋生：每 QUEEN_SPAWN_EVERY 顆方塊一次，隨機取代一格一般史萊姆
         if (this.colonyTicks % this.QUEEN_SPAWN_EVERY === 0) {
@@ -929,18 +960,30 @@ class SlimeTetris {
                 const made = parseInt(String(cell).split('|')[2], 10) || 0;
                 if (made >= this.QUEEN_MAX_LARVAE) continue;
                 const spots = [];
-                for (let rr = 0; rr < this.ROWS; rr++) for (let cc = 0; cc < this.COLS; cc++) {
-                    const x = this.board[rr][cc];
-                    if (x && !SlimeTetris.cellKind(x) && SlimeTetris.cellColor(x) !== '#6b6b80') spots.push([rr, cc]);
+                if (this.bug) {
+                    // 🐜 蟲萊姆通啦：幼蟲長在每一欄堆疊的正上方（多佔一格、堆疊變高）；不會剛好補滿一整行
+                    for (let cc = 0; cc < this.COLS; cc++) {
+                        let top = 0; while (top < this.ROWS && this.board[top][cc] === 0) top++;
+                        const rr = top - 1;
+                        if (rr < 0) continue;
+                        if (this.board[rr].filter(x => x !== 0).length >= this.COLS - 1) continue;
+                        spots.push([rr, cc]);
+                    }
+                } else {
+                    for (let rr = 0; rr < this.ROWS; rr++) for (let cc = 0; cc < this.COLS; cc++) {
+                        const x = this.board[rr][cc];
+                        if (x && !SlimeTetris.cellKind(x) && SlimeTetris.cellColor(x) !== '#6b6b80') spots.push([rr, cc]);
+                    }
                 }
                 if (!spots.length) continue;
                 const [sr, sc] = spots[Math.floor(this.queenRng() * spots.length)];
-                this.board[sr][sc] = `${SlimeTetris.cellColor(this.board[sr][sc])}|larva|0`;
+                this.board[sr][sc] = `${this.bug ? SlimeTetris.cellColor(cell) : SlimeTetris.cellColor(this.board[sr][sc])}|larva|0`;
                 this.board[r][c] = `${SlimeTetris.cellColor(cell)}|queen|${made + 1}`;
                 hatched++;
             }
         }
         if (hatched || grew) this.sfx.hatch();
+        if (this.bug) this.bugQueens = this.board.flat().filter(x => SlimeTetris.cellKind(x) === 'queen').length;
     }
 
     // 🛡 安全期開始：場上蟻后與幼蟲全部變回普通史萊姆，接下來約 SAFE_PIECES 顆方塊沒有蟲
