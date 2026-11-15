@@ -155,10 +155,12 @@ class SlimeTetris {
         this.SCORE_MUL = 1;
         this.SAFE_EVERY = 10000; this.SAFE_PIECES = 10;
         this.safeLeft = 0; this.nextSafeAt = this.SAFE_EVERY; this.safeAt = 0; this.dangerAt = 0;
-        if (this.bug) { this.SPECIAL_RATE = 1 / 5; this.QUEEN_SPAWN_EVERY = 1; this.LARVA_GROW_TURNS = 2; this.SCORE_MUL = 1.5; this.QUEEN_MAX_LARVAE = 2; }
+        if (this.bug) { this.SPECIAL_RATE = 1 / 5; this.QUEEN_SPAWN_EVERY = 1; this.LARVA_GROW_TURNS = 3; this.SCORE_MUL = 1.5; this.QUEEN_MAX_LARVAE = 2; }
         // 🐜 蟲萊姆通啦的壓力：幼蟲往上長（堆疊變高）、幼蟲長大時啃洞、每隻蟻后讓速度 +1 級、幼蟲要消 2 次
         this.bugQueens = 0;
         this.BUG_MAX_LEVEL = 10;
+        // 🐜 硬核但有上限：場上蟻后、幼蟲各有總數上限，蟻后加速最多 +3 級，避免無限繁殖
+        this.BUG_MAX_QUEENS = 4; this.BUG_MAX_LARVAE_FIELD = 6; this.BUG_SPEED_BONUS_MAX = 3;
         this.clearMods = null;
         this.sfx = window.__slimeSfx || (window.__slimeSfx = new SlimeSFX());
         // 方向鍵長按：鍵盤 / 觸控分開設定（DAS＝開始連續移動前的等待，ARR＝之後每格間隔，毫秒）
@@ -280,7 +282,8 @@ class SlimeTetris {
                 for (const [name, w] of pool) { acc += w / tot; if (pickKind < acc) { kind = name; break; } }
                 if (kind === 'blackhole' && this.kindOnField('twin')) kind = '';
             }
-            if (this.bug && this.safeLeft > 0) kind = '';   // 🛡 安全期：不出蟻后（亂數照常消耗）
+            if (this.bug && this.safeLeft > 0) kind = '';
+            if (this.bug && kind === 'queen' && this.bugQueens >= this.BUG_MAX_QUEENS) kind = '';   // 場上蟻后已滿   // 🛡 安全期：不出蟻后（亂數照常消耗）
             if (kind) {
                 const cells = [];
                 m.forEach((row, r) => row.forEach((v, c) => { if (v) cells.push([r, c]); }));
@@ -634,7 +637,7 @@ class SlimeTetris {
         const byTime = this.opts.pvp ? 1 : 1 + Math.floor(this.playMs / this.TIME_PER_LEVEL);
         const ext = this.opts.minLevel ? this.opts.minLevel() : 1;
         // 🐜 蟲萊姆通啦：速度（含蟻后加速）最高只到 BUG_MAX_LEVEL 級
-        return Math.min(this.bug ? this.BUG_MAX_LEVEL : this.MAX_LEVEL, Math.max(byLines, byTime, ext) + (this.bug ? this.bugQueens : 0));
+        return Math.min(this.bug ? this.BUG_MAX_LEVEL : this.MAX_LEVEL, Math.max(byLines, byTime, ext) + (this.bug ? Math.min(this.bugQueens, this.BUG_SPEED_BONUS_MAX) : 0));
     }
 
     // 等級越高，著地後可微調的時間越短，維持壓迫感
@@ -968,6 +971,8 @@ class SlimeTetris {
         }
         this.colonyTicks++;
         let grew = 0, hatched = 0;
+        const countKind = (k) => this.board.flat().filter(x => SlimeTetris.cellKind(x) === k).length;
+        let queensNow = countKind('queen'), larvaeNow = countKind('larva');
         // 幼蟲長大：格子編碼 "顏色|larva|回合數"，滿 LARVA_GROW_TURNS 就變成新蟻后 "顏色|queen|0"
         for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
             const cell = this.board[r][c];
@@ -975,8 +980,9 @@ class SlimeTetris {
             const parts = String(cell).split('|');
             const age = (parseInt(parts[2], 10) || 0) + 1;
             const color = SlimeTetris.cellColor(cell);
+            if (age >= this.LARVA_GROW_TURNS && this.bug && queensNow >= this.BUG_MAX_QUEENS) continue;   // 蟻后已滿：幼蟲先不長大
             if (age >= this.LARVA_GROW_TURNS) {
-                this.board[r][c] = `${color}|queen|0`; grew++;
+                this.board[r][c] = `${color}|queen|0`; grew++; queensNow++; larvaeNow--;
                 // 🐜 蟲萊姆通啦：長大時啃掉旁邊（左、右、下）一格一般史萊姆，打出缺口
                 if (this.bug) {
                     const near = [[r, c - 1], [r, c + 1], [r + 1, c]].filter(([rr, cc]) => rr < this.ROWS && cc >= 0 && cc < this.COLS && this.board[rr][cc] && !SlimeTetris.cellKind(this.board[rr][cc]));
@@ -991,6 +997,7 @@ class SlimeTetris {
                 if (SlimeTetris.cellKind(cell) !== 'queen') continue;
                 const made = parseInt(String(cell).split('|')[2], 10) || 0;
                 if (made >= this.QUEEN_MAX_LARVAE) continue;
+                if (this.bug && larvaeNow >= this.BUG_MAX_LARVAE_FIELD) continue;   // 場上幼蟲已滿
                 const spots = [];
                 if (this.bug) {
                     // 🐜 蟲萊姆通啦：幼蟲長在每一欄堆疊的正上方（多佔一格、堆疊變高）；不會剛好補滿一整行
@@ -1011,7 +1018,7 @@ class SlimeTetris {
                 const [sr, sc] = spots[Math.floor(this.queenRng() * spots.length)];
                 this.board[sr][sc] = `${this.bug ? SlimeTetris.cellColor(cell) : SlimeTetris.cellColor(this.board[sr][sc])}|larva|0`;
                 this.board[r][c] = `${SlimeTetris.cellColor(cell)}|queen|${made + 1}`;
-                hatched++;
+                hatched++; larvaeNow++;
             }
         }
         if (hatched || grew) this.sfx.hatch();
