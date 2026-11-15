@@ -139,6 +139,7 @@ class SlimeTetris {
         this.special = !!opts.special;
         this.specialRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x51ED5EED) : Math.random;
         this.SPECIAL_RATE = 1 / 9;
+        this.TWIN_RATE = 0.12;   // 堆疊過半後，每顆方塊 12% 機率是雙生
         this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09]];
         this.forcedO = 0;              // ☯ 雙生：接下來還剩幾個 2×2 方塊
         this.twinRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x7A1A7A1A) : Math.random;
@@ -251,12 +252,20 @@ class SlimeTetris {
             const roll = this.specialRng();
             const pickKind = this.specialRng();
             const pickCell = this.specialRng();
-            if (roll < this.SPECIAL_RATE) {
-                let acc = 0, kind = 'star';
-                for (const [name, w] of this.SPECIAL_KINDS) { acc += w; if (pickKind < acc) { kind = name; break; } }
-                // ☯ 雙生只在堆疊超過半場時出現；雙生與 🕳 黑洞不會同時在場上（條件不符就當作一般方塊，亂數照常消耗，PK 雙方順序不會錯開）
-                if (kind === 'twin' && (this.stackHeight() <= this.ROWS / 2 || this.kindOnField('blackhole'))) kind = '';
+            // ☯ 雙生：堆疊過半、場上沒有黑洞、目前沒有雙生連發時，每顆方塊有獨立 TWIN_RATE 機率出現
+            const twinOk = this.stackHeight() > this.ROWS / 2 && !this.kindOnField('blackhole') && !this.kindOnField('twin') && this.forcedO === 0 && !twinO;
+            const tr = twinOk ? this.TWIN_RATE : 0;
+            let kind = '';
+            if (roll < tr) kind = 'twin';
+            else if (roll < tr + this.SPECIAL_RATE) {
+                // 其他特殊史萊姆（不含雙生）；亂數消耗次數固定，PK 雙方順序不會錯開
+                const pool = this.SPECIAL_KINDS.filter(([n]) => n !== 'twin');
+                const tot = pool.reduce((a, [, w]) => a + w, 0);
+                let acc = 0; kind = 'star';
+                for (const [name, w] of pool) { acc += w / tot; if (pickKind < acc) { kind = name; break; } }
                 if (kind === 'blackhole' && this.kindOnField('twin')) kind = '';
+            }
+            if (kind) {
                 const cells = [];
                 m.forEach((row, r) => row.forEach((v, c) => { if (v) cells.push([r, c]); }));
                 const [sr, sc] = cells[Math.floor(pickCell * cells.length)];
