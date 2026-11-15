@@ -97,3 +97,24 @@ body.pk-mode .sidebar { gap: 6px; }
 .pk-rank-tabs button { padding: 4px 10px; font-size: 12px; }
 .pk-rank-tabs button.on { background: #4ecca3; color: #121224; border-color: #4ecca3; font-weight: bold; }
 .pk-rank-tabs button[data-v="special"].on { background: #feca57; border-color: #feca57; }
+
+/* ===== 版面溢出修正：內容比畫面高時可以完整捲動（不再被切掉頂端） ===== */
+.pk-overlay { justify-content: flex-start; padding: max(12px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; }
+.pk-overlay > .pk-card { margin-top: auto; margin-bottom: auto; flex-shrink: 0; }
+.pk-card { gap: 8px; padding: 14px; }
+.pk-title { font-size: 20px; }
+.pk-rank-viewport { height: 112px; }
+/* 特殊規則：預設收合 */
+.pk-rules { background: #252545; border-radius: 6px; padding: 6px 8px; }
+.pk-rules summary { cursor: pointer; color: #feca57; font-weight: bold; font-size: 12px; list-style: none; }
+.pk-rules summary::-webkit-details-marker { display: none; }
+.pk-rules summary::after { content: ' ▾'; }
+.pk-rules[open] summary::after { content: ' ▴'; }
+.pk-rules ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pk-rules li { font-size: 12px; line-height: 1.45; color: #dcdde1; }
+.pk-rules li b { color: #fff; }
+.pk-rules p { margin: 6px 0 0; font-size: 11px; color: #a0a0c0; }
+@media (max-height: 700px) {
+  .pk-big { padding: 10px; font-size: 14px; }
+  .pk-me { padding: 6px 8px; }
+}

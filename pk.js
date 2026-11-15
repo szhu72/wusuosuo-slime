@@ -154,6 +154,7 @@
               <button data-v="classic">🎮 經典</button>
               <button data-v="special">✨ 特殊史萊姆</button>
             </div>
+            <div class="pk-hint" id="pk-room-rules"></div>
             <button id="pk-share" class="ui-btn primary">📨 邀請好友</button>
             <ul id="pk-players" class="pk-players"></ul>
             <button id="pk-ready" class="ui-btn primary pk-big">準備</button>
@@ -240,6 +241,16 @@
     let variant = (() => { try { return localStorage.getItem('slime_variant') === 'special' ? 'special' : 'classic'; } catch { return 'classic'; } })();
     const sfxKey = (special) => (special ? 'Sp' : '');          // 欄位後綴：best / bestSp、wins / winsSp…
     const variantName = (special) => (special ? '特殊史萊姆' : '經典');
+    const SPECIAL_RULES = [
+        ['⭐', '星星', '該次消除分數 ×2、PK 攻擊 +1'],
+        ['💣', '炸彈', '連同正上方、正下方整行一起炸掉'],
+        ['💧', '融化', '落地後往下滴，補滿下方空洞'],
+        ['🧟', '殭屍', '一般消除會冒 2 行垃圾；被炸彈或黑洞處理掉可淨化 +100'],
+        ['🕳', '黑洞', '清空整個盤面，本次得分 8 成'],
+        ['☯', '雙生', '堆超過半場才出現，消除後連續 5–8 個 2×2'],
+        ['🛡', '硬殼垃圾', 'PK 專用，要消 2 次'],
+    ];
+    const rulesHtml = () => `<details class="pk-rules"><summary>✨ 特殊史萊姆規則（點開看）</summary><ul>${SPECIAL_RULES.map(([i, n, d]) => `<li><b>${i} ${n}</b>　${d}</li>`).join('')}</ul><p>成績與排行榜和經典模式分開計算。</p></details>`;
     const SPECIAL_HELP = '⭐ 星星：該次消除分數 ×2、攻擊 +1　💣 炸彈：連同正上方、正下方整行一起炸掉（照一般消行計分）　💧 融化：落地往下滴補洞　🧟 殭屍：一般消除會讓自己冒出 2 行垃圾，但被炸彈或黑洞處理掉可淨化並加分　🕳 黑洞：消除時清空整個盤面，本次得分只拿 8 成　☯ 雙生（堆超過半場才出現）：消除後連續 5–8 個 2×2 方塊，是福是禍看手氣　🛡 硬殼垃圾（PK）：要消 2 次';
     let selMode = { mode: 'timed', duration: 180 };
     function modeText(m) { return m.mode === 'survival' ? '生存 PK：不限時間，先堆到頂的人輸，每 40 秒自動加速。' : `計時 PK：${m.duration / 60} 分鐘內消除行數多的人贏；中途有人堆到頂就直接判輸、提早結束。`; }
@@ -302,7 +313,10 @@
     function renderRoom() {
         const r = room;
         $('#pk-room-code').textContent = roomCode;
-        $('#pk-room-mode').textContent = `${modeText(r)}${r.special ? '\n✨ 特殊史萊姆模式：' + SPECIAL_HELP : '\n🎮 經典模式：沒有特殊史萊姆。'}`;
+        $('#pk-room-mode').textContent = modeText(r);
+        const rr = $('#pk-room-rules');
+        const want = r.special ? 'special' : 'classic';
+        if (rr.dataset.v !== want) { rr.dataset.v = want; rr.innerHTML = r.special ? rulesHtml() : '🎮 經典模式：沒有特殊史萊姆。'; }
         const canSwitch = r.host === me.uid && r.status !== 'playing';
         document.querySelectorAll('#pk-room-variant button').forEach((b) => {
             b.classList.toggle('on', (b.dataset.v === 'special') === !!r.special);
@@ -636,8 +650,8 @@
         $('#pk-single').onclick = startSingle;
         const renderVariant = () => {
             document.querySelectorAll('#pk-variant button').forEach((b) => b.classList.toggle('on', b.dataset.v === variant));
-            $('#pk-variant-hint').textContent = variant === 'special'
-                ? '✨ ' + SPECIAL_HELP + '。成績與排行榜和經典模式分開計算。'
+            $('#pk-variant-hint').innerHTML = variant === 'special'
+                ? rulesHtml()
                 : '🎮 經典模式：純粹比消除技術，沒有特殊史萊姆。';
             $('#pk-single').textContent = variant === 'special' ? '✨ 單人遊戲（特殊史萊姆）' : '🎮 單人遊戲（經典）';
         };
