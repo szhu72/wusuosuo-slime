@@ -178,6 +178,7 @@ class SlimeTetris {
         // 街機式「越玩越快」：最高 15 級；每 6 行升 1 級，或每 45 秒自動升 1 級（取較高者）
         this.MAX_LEVEL = 15;
         this.LINES_PER_LEVEL = 6;
+        this.LEVEL_SCORE_STEP = 0.1;   // ⚡ 速度越快分數越多：每升 1 級，消行得分 +0.1 倍（Lv1 ×1.0、Lv10 ×1.9、Lv15 ×2.4）
         this.TIME_PER_LEVEL = 45000;
         this.SPEED_TABLE = [1000, 850, 720, 610, 520, 440, 370, 310, 260, 215, 175, 140, 110, 85, 65]; // 每格下落毫秒
         this.playMs = 0;               // 實際遊玩時間（不含暫停）
@@ -691,6 +692,9 @@ class SlimeTetris {
         // 🐜 蟲萊姆通啦：速度最高只到 BUG_MAX_LEVEL 級（蟻后數量不影響速度）
         return Math.min(this.bug ? this.BUG_MAX_LEVEL : this.MAX_LEVEL, Math.max(byLines, byTime, ext));
     }
+
+    // 等級越高，消行得分倍率越高（用消行當下的等級計算）
+    levelScoreMul() { return 1 + this.LEVEL_SCORE_STEP * (this.currentLevel() - 1); }
 
     // 等級越高，著地後可微調的時間越短，維持壓迫感
     lockDelay() {
@@ -1221,7 +1225,7 @@ class SlimeTetris {
             const charged = chargedN;
             for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) if (isCharged(this.board[r][c])) this.board[r][c] = SlimeTetris.cellColor(this.board[r][c]);
             if (charged) { addScore *= 1 + 0.5 * charged; this.flashBoostAt = performance.now(); this.flashBoost = 1 + 0.5 * charged; }
-            addScore = Math.round(addScore * this.SCORE_MUL * (this.bug ? 1 + this.BOUNTY_PER_QUEEN * this.bugQueens : 1));   // 👑 懸賞：場上每隻蟻后 +0.5 倍
+            addScore = Math.round(addScore * this.SCORE_MUL * this.levelScoreMul() * (this.bug ? 1 + this.BOUNTY_PER_QUEEN * this.bugQueens : 1));   // 👑 懸賞：場上每隻蟻后 +0.5 倍
             this.score += addScore;
             if (this.bug && this.score >= this.nextSafeAt) {
                 while (this.score >= this.nextSafeAt) this.nextSafeAt += this.SAFE_EVERY;
@@ -1494,6 +1498,8 @@ class SlimeTetris {
             this.ctx.font = `bold ${20 + 6 * Math.sin(Math.min(1, t * 3) * Math.PI)}px sans-serif`;
             this.ctx.textAlign = 'center';
             this.ctx.fillText(`LEVEL ${this.shownLevel}`, this.W / 2, this.H * 0.32 - t * 20);
+            this.ctx.font = 'bold 13px sans-serif';
+            this.ctx.fillText(`得分 ×${(1 + this.LEVEL_SCORE_STEP * (this.shownLevel - 1)).toFixed(1)}`, this.W / 2, this.H * 0.32 + 20 - t * 20);
             this.ctx.restore();
         }
 
