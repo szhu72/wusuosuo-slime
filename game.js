@@ -325,8 +325,9 @@ class SlimeTetris {
         if (kind === 'blackhole') color = '#3a2a5e';   // 黑洞：深紫
         if (kind === 'twin') color = '#f4f4f4';        // 雙生：黑白各半
         this.drawSlimeBody(ctx, x, y, color, size, fx);
-        if (kind) this.drawAccessory(ctx, x * size, y * size, size, kind, fx);
-        if (kind === 'larva' && String(cell).split('|')[3] === '1') this.drawAccessory(ctx, x * size, y * size, size, 'crack', fx);
+        const cracked = kind === 'larva' && String(cell).split('|')[3] === '1';   // 裂開的幼蟲：不戴奶嘴、多一道裂痕
+        if (kind) this.drawAccessory(ctx, x * size, y * size, size, cracked ? 'larvaCracked' : kind, fx);
+        if (cracked) this.drawAccessory(ctx, x * size, y * size, size, 'crack', fx);
     }
 
     applyFx(ctx, px, py, size, fx) {
@@ -402,7 +403,7 @@ class SlimeTetris {
                 ctx.stroke();
             }
             ctx.fillStyle = '#05030c'; ctx.beginPath(); ctx.arc(cx, cy, s * 0.09, 0, Math.PI * 2); ctx.fill();
-        } else if (kind === 'queen' || kind === 'larva') {
+        } else if (kind === 'queen' || kind === 'larva' || kind === 'larvaCracked') {
             const q = kind === 'queen';
             if (!q) { ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(px + 1, py + 1, s - 2, s - 2, s * 0.3); else ctx.rect(px + 1, py + 1, s - 2, s - 2); ctx.fill(); }
             ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * (q ? 0.055 : 0.045));
@@ -425,7 +426,7 @@ class SlimeTetris {
                     ctx.bezierCurveTo(bx - d * s * 0.02, py + s * 0.82, bx + d * s * 0.02, py + s * 0.72, bx + d * s * 0.06, py + s * 0.66);
                     ctx.closePath(); ctx.fill(); ctx.stroke();
                 });
-            } else {
+            } else if (kind === 'larva') {
                 // 奶嘴：粉紅護片＋中間奶嘴頭＋下方拉環
                 ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.035);
                 ctx.fillStyle = '#ff9ff3'; ctx.beginPath(); ctx.ellipse(px + s * 0.5, py + s * 0.7, s * 0.15, s * 0.07, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
