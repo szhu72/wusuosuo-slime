@@ -161,6 +161,11 @@ class SlimeTetris {
         this.BUG_MAX_LEVEL = 10;
         // 🐜 硬核但有上限：場上蟻后、幼蟲各有總數上限，避免無限繁殖
         this.BUG_MAX_QUEENS = 4; this.BUG_MAX_LARVAE_FIELD = 6;
+        // 🐜 刺激機制：蟻后懸賞（每隻在場 +0.5 倍得分）、蟲潮來襲（定時從底部冒蟲穴行）、蟻后發怒（太久沒消行就啃洞）
+        this.BOUNTY_PER_QUEEN = 0.5;
+        this.WAVE_FIRST_MS = 40000; this.WAVE_STEP_MS = 5000; this.WAVE_MIN_MS = 20000; this.WAVE_LARVAE = 2;
+        this.nextWaveAt = this.WAVE_FIRST_MS; this.waveCount = 0; this.waveAt = 0;
+        this.FURY_AFTER = 5; this.idlePieces = 0; this.furyAt = 0;
         this.clearMods = null;
         this.sfx = window.__slimeSfx || (window.__slimeSfx = new SlimeSFX());
         // 方向鍵長按：鍵盤 / 觸控分開設定（DAS＝開始連續移動前的等待，ARR＝之後每格間隔，毫秒）
@@ -565,6 +570,14 @@ class SlimeTetris {
             this.nextCtx.fillText(`☯×${remain}`, this.NW - 3, 13);
             this.nextCtx.restore();
         }
+        if (this.bug && this.safeLeft === 0) {
+            this.nextCtx.save();
+            this.nextCtx.font = 'bold 11px sans-serif';
+            if (this.bugQueens > 0) { this.nextCtx.fillStyle = '#feca57'; this.nextCtx.textAlign = 'left'; this.nextCtx.fillText(`👑×${(1 + this.BOUNTY_PER_QUEEN * this.bugQueens).toFixed(1)}`, 2, this.NH - 4); }
+            const left = this.FURY_AFTER - this.idlePieces;
+            if (this.bugQueens > 0 && left <= 2) { this.nextCtx.fillStyle = '#ff6b6b'; this.nextCtx.textAlign = 'right'; this.nextCtx.fillText(`😠${left}`, this.NW - 2, 13); }
+            this.nextCtx.restore();
+        }
         if (this.safeLeft > 0) {
             this.nextCtx.save();
             this.nextCtx.fillStyle = '#7bed9f'; this.nextCtx.font = 'bold 12px sans-serif'; this.nextCtx.textAlign = 'left';
@@ -911,7 +924,7 @@ class SlimeTetris {
 
         this.sfx.land();
         this.clearLines();
-        this.colonyTick();
+        if (this.colonyTick()) { this.endGame(); return; }
         if (this.pendingGarbage > 0) {
             this.sfx.garbage();
             if (this.applyGarbage()) { this.endGame(); return; }
@@ -952,7 +965,7 @@ class SlimeTetris {
             }
         }
         if (mods && mods.blackhole) this.board = this.board.map(() => Array(this.COLS).fill(0));
-        this.colonyTick();
+        if (this.colonyTick()) { this.endGame(); return; }
         // 🧟 殭屍：每隻殭屍讓自己底下冒出 2 行垃圾（陷阱）
         if (mods && mods.zombies) {
             if (this.addGarbageRows(Math.min(4, mods.zombies * 2), false)) { this.endGame(); return; }
@@ -962,14 +975,39 @@ class SlimeTetris {
 
     // 👑 蟻后回合處理（每鎖定一顆方塊呼叫一次，在消行之後）
     colonyTick() {
-        if (!this.special) return;
+        if (!this.special) return false;
         if (this.bug) this.bugQueens = this.board.flat().filter(x => SlimeTetris.cellKind(x) === 'queen').length;
-        if (this.safeLeft > 0) {   // 🛡 安全期：蟲不繁殖、不長大
+        if (this.safeLeft > 0) {   // 🛡 安全期：蟲不繁殖、不長大、不發怒，蟲潮也先暫停
             this.safeLeft--;
             if (this.safeLeft === 0) { this.dangerAt = performance.now(); this.sfx.hatch(); }
-            return;
+            if (this.bug && this.playMs >= this.nextWaveAt) this.nextWaveAt = this.playMs + this.WAVE_MIN_MS;
+            return false;
         }
         this.colonyTicks++;
+        let toppedOut = false;
+        if (this.bug) {
+            this.idlePieces = this.combo > 0 ? 0 : this.idlePieces + 1;   // combo>0 代表這一顆有消行
+            // 🐜 蟲潮來襲：第一次 40 秒，之後每波間隔少 5 秒（最短 20 秒）；底部冒出 1 行帶幼蟲的蟲穴
+            if (this.playMs >= this.nextWaveAt) {
+                this.waveCount++;
+                this.nextWaveAt = this.playMs + Math.max(this.WAVE_MIN_MS, this.WAVE_FIRST_MS - this.WAVE_STEP_MS * this.waveCount);
+                const top = this.board.shift();
+                if (top.some(cell => cell !== 0)) toppedOut = true;
+                const row = Array(this.COLS).fill('#6b6b80');
+                const hole = Math.floor(this.queenRng() * this.COLS);
+                row[hole] = 0;
+                const larvaeOnField = this.board.flat().filter(x => SlimeTetris.cellKind(x) === 'larva').length;
+                const room = Math.max(0, Math.min(this.WAVE_LARVAE, this.BUG_MAX_LARVAE_FIELD - larvaeOnField));
+                for (let i = 0; i < room; i++) {
+                    let c = Math.floor(this.queenRng() * this.COLS);
+                    while (row[c] === 0 || SlimeTetris.cellKind(row[c]) === 'larva') c = (c + 1) % this.COLS;
+                    row[c] = '#a3cb38|larva|0';
+                }
+                this.board.push(row);
+                this.waveAt = performance.now();
+                this.sfx.garbage();
+            }
+        }
         let grew = 0, hatched = 0;
         const countKind = (k) => this.board.flat().filter(x => SlimeTetris.cellKind(x) === k).length;
         let queensNow = countKind('queen'), larvaeNow = countKind('larva');
@@ -1019,12 +1057,25 @@ class SlimeTetris {
             }
         }
         if (hatched || grew) this.sfx.hatch();
+        // 👑 蟻后發怒：連續 FURY_AFTER 顆沒消行，場上每隻蟻后立刻啃掉同一行左右一格
+        if (this.bug && this.idlePieces >= this.FURY_AFTER) {
+            let chewed = 0;
+            for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+                if (SlimeTetris.cellKind(this.board[r][c]) !== 'queen') continue;
+                const near = [[r, c - 1], [r, c + 1]].filter(([rr, cc]) => cc >= 0 && cc < this.COLS && this.board[rr][cc] && !SlimeTetris.cellKind(this.board[rr][cc]));
+                if (near.length) { const [rr, cc] = near[Math.floor(this.queenRng() * near.length)]; this.board[rr][cc] = 0; chewed++; }
+            }
+            this.idlePieces = 0;
+            if (chewed) { this.furyAt = performance.now(); this.sfx.crack(); }
+        }
         if (this.bug) this.bugQueens = this.board.flat().filter(x => SlimeTetris.cellKind(x) === 'queen').length;
+        return toppedOut;
     }
 
     // 🛡 安全期開始：場上蟻后與幼蟲全部變回普通史萊姆，接下來約 SAFE_PIECES 顆方塊沒有蟲
     startSafePeriod() {
         this.safeLeft = this.SAFE_PIECES;
+        this.idlePieces = 0;
         this.safeAt = performance.now();
         for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
             const k = SlimeTetris.cellKind(this.board[r][c]);
@@ -1079,7 +1130,7 @@ class SlimeTetris {
             const comboRate = 0.5 * (mods.queens ? this.QUEEN_COMBO_MUL : 1);   // 👑 消掉蟻后：combo 加成翻倍
             let addScore = base * (1 + this.combo * comboRate) * (mods.stars ? 2 : 1) + (mods.purified || 0) * 100 + (mods.queens || 0) * this.QUEEN_BONUS;
             if (mods.blackhole) addScore = (addScore + (mods.vacuumed || 0) * 10) * 0.8;
-            addScore = Math.round(addScore * this.SCORE_MUL);
+            addScore = Math.round(addScore * this.SCORE_MUL * (this.bug ? 1 + this.BOUNTY_PER_QUEEN * this.bugQueens : 1));   // 👑 懸賞：場上每隻蟻后 +0.5 倍
             this.score += addScore;
             if (this.bug && this.score >= this.nextSafeAt) {
                 while (this.score >= this.nextSafeAt) this.nextSafeAt += this.SAFE_EVERY;
@@ -1322,7 +1373,7 @@ class SlimeTetris {
 
         // LEVEL UP 提示（約 0.9 秒）
         // 🐜 蟲萊姆通啦：安全期開始／結束提示
-        [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43']].forEach(([at, txt, color]) => {
+        [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43'], [this.waveAt, '🐜 蟲潮來襲！', '#a3cb38'], [this.furyAt, '👑 蟻后發怒！', '#ff6b6b']].forEach(([at, txt, color]) => {
             if (!at || now - at >= 1500 || this.gameOver) return;
             const t = (now - at) / 1500;
             this.ctx.save();

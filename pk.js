@@ -263,6 +263,9 @@
         ['👑', '蟻后', '約每 5 顆出現 1 隻；每落 1 顆就把自己正下方最近的史萊姆變成幼蟲（每隻最多 2 隻）。場上最多 4 隻蟻后、6 隻幼蟲'],
         ['🐛', '幼蟲', '要消 2 次（第 1 次只會裂開）；3 回合沒消掉就長成新蟻后（蟻后已滿時先不長大），長大時還會啃掉同一行左右一格'],
         ['💰', '分數', '所有得分 ×1.5；消掉蟻后 +300、combo 加成 ×2'],
+        ['💰', '蟻后懸賞', '場上每隻蟻后讓得分再 +0.5 倍（NEXT 左下顯示 👑×倍率）：留著賺更多，但她們會繁殖啃洞'],
+        ['🌊', '蟲潮來襲', '第 40 秒起從底部冒出 1 行帶幼蟲的蟲穴，之後每波間隔縮短 5 秒（最短 20 秒）'],
+        ['😠', '蟻后發怒', '連續 5 顆沒消行，場上每隻蟻后立刻啃掉同一行左右一格（NEXT 右上倒數）'],
         ['🛡', '安全期', '分數每突破 1 萬：場上的蟲全部變回普通史萊姆，約 10 顆方塊不出蟲，之後蟲蟲危機再來'],
     ];
     const bugRulesHtml = () => `<details class="pk-rules"><summary>🐜 蟲萊姆通啦規則（點開看）</summary><ul>${BUG_RULES.map(([i, n, d]) => `<li><b>${i} ${n}</b>　${d}</li>`).join('')}</ul><p>只會出現蟻后與幼蟲，成績與排行榜另外計算。</p></details>`;
@@ -660,8 +663,13 @@
         document.querySelectorAll('#pk-rank-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.v === rankVariant));
         const field = 'best' + sfxKey(rankVariant);
         let list = [];
-        try { list = net ? await net.topBest(10, field) : []; } catch (e) { console.warn(e); }
-        if (!list.length) { ol.innerHTML = `<li class="pk-hint">${net ? '還沒有紀錄，來當第一名吧！' : 'PK 連線啟用後顯示'}</li>`; ol.classList.remove('pk-rolling'); return; }
+        let err = null;
+        try { list = net ? await net.topBest(10, field) : []; } catch (e) { console.warn(e); err = e; }
+        if (!list.length) {
+            // 讀取失敗（多半是資料庫規則還沒發布、缺少索引）時明確說出原因，不要誤顯示成「還沒有紀錄」
+            const msg = err ? `排行榜讀取失敗：${/index/i.test(String(err.message || err)) ? '資料庫規則尚未發布最新版（缺少索引）' : (err.code || err.message || err)}` : (net ? '還沒有紀錄，來當第一名吧！' : 'PK 連線啟用後顯示');
+            ol.innerHTML = `<li class="pk-hint">${esc(msg)}</li>`; ol.classList.remove('pk-rolling'); return;
+        }
         const medal = (i) => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
         const row = (p, i) => `<li class="${me && p.code === me.code ? 'me' : ''}"><span>${medal(i)} ${esc(p.name)} <span class="pk-tag">#${esc(p.code || '')}</span></span><b>${p[field]}</b></li>`;
         const html = list.map(row).join('');
