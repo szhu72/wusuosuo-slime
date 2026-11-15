@@ -158,6 +158,7 @@ class SlimeTetris {
         if (this.bug) { this.SPECIAL_RATE = 1 / 5; this.QUEEN_SPAWN_EVERY = 1; this.LARVA_GROW_TURNS = 2; this.SCORE_MUL = 1.5; this.QUEEN_MAX_LARVAE = 2; }
         // 🐜 蟲萊姆通啦的壓力：幼蟲往上長（堆疊變高）、幼蟲長大時啃洞、每隻蟻后讓速度 +1 級、幼蟲要消 2 次
         this.bugQueens = 0;
+        this.BUG_MAX_LEVEL = 10;
         this.clearMods = null;
         this.sfx = window.__slimeSfx || (window.__slimeSfx = new SlimeSFX());
         // 方向鍵長按：鍵盤 / 觸控分開設定（DAS＝開始連續移動前的等待，ARR＝之後每格間隔，毫秒）
@@ -602,7 +603,8 @@ class SlimeTetris {
         const byLines = 1 + Math.floor(this.lines / this.LINES_PER_LEVEL);
         const byTime = this.opts.pvp ? 1 : 1 + Math.floor(this.playMs / this.TIME_PER_LEVEL);
         const ext = this.opts.minLevel ? this.opts.minLevel() : 1;
-        return Math.min(this.MAX_LEVEL, Math.max(byLines, byTime, ext) + (this.bug ? this.bugQueens : 0));
+        // 🐜 蟲萊姆通啦：速度（含蟻后加速）最高只到 BUG_MAX_LEVEL 級
+        return Math.min(this.bug ? this.BUG_MAX_LEVEL : this.MAX_LEVEL, Math.max(byLines, byTime, ext) + (this.bug ? this.bugQueens : 0));
     }
 
     // 等級越高，著地後可微調的時間越短，維持壓迫感
