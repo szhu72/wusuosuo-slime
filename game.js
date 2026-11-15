@@ -342,11 +342,20 @@ class SlimeTetris {
         this.applyFx(ctx, px, py, s, fx);
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         if (kind === 'star') {
-            const cx = px + s * 0.74, cy = py + s * 0.22, R = s * 0.3, r = s * 0.13;
-            ctx.beginPath();
-            for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r : R; ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
-            ctx.closePath(); ctx.fillStyle = '#ffe066'; ctx.fill();
-            ctx.lineWidth = Math.max(1.2, s * 0.06); ctx.strokeStyle = '#1e272e'; ctx.stroke();
+            // 星星面罩：兩眼各罩一顆星星，中間用橋連起來，眼睛露在面罩上
+            const ey = py + s * 0.45, R = s * 0.24, r = s * 0.12;
+            ctx.fillStyle = '#ffe066'; ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.045);
+            ctx.beginPath(); ctx.rect(px + s * 0.4, ey - s * 0.05, s * 0.2, s * 0.08); ctx.fill(); ctx.stroke();
+            [0.33, 0.67].forEach((dx) => {
+                const cx = px + s * dx;
+                ctx.beginPath();
+                for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r : R; ctx.lineTo(cx + Math.cos(a) * rr, ey + s * 0.02 + Math.sin(a) * rr); }
+                ctx.closePath(); ctx.fill(); ctx.stroke();
+            });
+            [0.35, 0.65].forEach((dx) => {
+                ctx.fillStyle = '#1e272e'; ctx.beginPath(); ctx.arc(px + s * dx, ey, s * 0.09, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px + s * dx - 1, ey - 1, s * 0.035, 0, Math.PI * 2); ctx.fill();
+            });
         } else if (kind === 'bomb') {
             // 炸彈：深色身體 + 粗引線 + 火花
             ctx.fillStyle = 'rgba(20,20,30,.55)';
@@ -384,10 +393,15 @@ class SlimeTetris {
             ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px + s * 0.63, py + s * 0.43, s * 0.045, 0, Math.PI * 2); ctx.fill();
             ctx.strokeStyle = '#1b1b22'; ctx.lineWidth = Math.max(1, s * 0.05); ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(px + 1, py + 1, s - 2, s - 2, s * 0.3); ctx.stroke();
         } else if (kind === 'blackhole') {
+            // 漩渦：三條旋臂由外往中心捲進去
             const cx = px + s / 2, cy = py + s * 0.52;
-            ctx.strokeStyle = 'rgba(190,150,255,.9)'; ctx.lineWidth = Math.max(1, s * 0.06);
-            for (let i = 0; i < 2; i++) { ctx.beginPath(); ctx.ellipse(cx, cy, s * (0.42 - i * 0.12), s * (0.16 - i * 0.05), -0.35, 0, Math.PI * 2); ctx.stroke(); }
-            ctx.fillStyle = '#05030c'; ctx.beginPath(); ctx.arc(cx, cy, s * 0.11, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = 'rgba(190,150,255,.9)'; ctx.lineWidth = Math.max(1, s * 0.055);
+            for (let k = 0; k < 3; k++) {
+                ctx.beginPath();
+                for (let i = 0; i <= 24; i++) { const t = i / 24, a = k * Math.PI * 2 / 3 + t * Math.PI * 2.2, rr = s * (0.06 + 0.34 * t); const x2 = cx + Math.cos(a) * rr, y2 = cy + Math.sin(a) * rr * 0.9; if (i) ctx.lineTo(x2, y2); else ctx.moveTo(x2, y2); }
+                ctx.stroke();
+            }
+            ctx.fillStyle = '#05030c'; ctx.beginPath(); ctx.arc(cx, cy, s * 0.09, 0, Math.PI * 2); ctx.fill();
         } else if (kind === 'queen' || kind === 'larva') {
             const q = kind === 'queen';
             if (!q) { ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(px + 1, py + 1, s - 2, s - 2, s * 0.3); else ctx.rect(px + 1, py + 1, s - 2, s - 2); ctx.fill(); }
@@ -399,6 +413,25 @@ class SlimeTetris {
             ctx.stroke();
             ctx.fillStyle = '#1e272e';
             [0.18, 0.82].forEach((dx) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * (0.2 - ah), s * 0.045, 0, Math.PI * 2); ctx.fill(); });
+            if (q) {
+                // 螞蟻大顎：嘴巴兩側一對往內彎的鉗子
+                // 實心月牙形鉗子：從臉頰往下外彎，尖端往中間夾，中間留縫
+                ctx.fillStyle = '#5a2a1a'; ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.035);
+                [1, -1].forEach((d) => {
+                    const bx = px + s * (0.5 - d * 0.2);
+                    ctx.beginPath();
+                    ctx.moveTo(bx, py + s * 0.64);
+                    ctx.bezierCurveTo(bx - d * s * 0.12, py + s * 0.7, bx - d * s * 0.08, py + s * 0.92, px + s * (0.5 - d * 0.03), py + s * 0.8);
+                    ctx.bezierCurveTo(bx - d * s * 0.02, py + s * 0.82, bx + d * s * 0.02, py + s * 0.72, bx + d * s * 0.06, py + s * 0.66);
+                    ctx.closePath(); ctx.fill(); ctx.stroke();
+                });
+            } else {
+                // 奶嘴：粉紅護片＋中間奶嘴頭＋下方拉環
+                ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.035);
+                ctx.fillStyle = '#ff9ff3'; ctx.beginPath(); ctx.ellipse(px + s * 0.5, py + s * 0.7, s * 0.15, s * 0.07, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#f368e0'; ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.7, s * 0.04, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = '#f368e0'; ctx.lineWidth = Math.max(1, s * 0.04); ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.83, s * 0.06, 0, Math.PI * 2); ctx.stroke();
+            }
             if (q) {
                 const y0 = py + s * 0.24, y1 = py + s * 0.02;
                 ctx.fillStyle = '#ffd32a';
