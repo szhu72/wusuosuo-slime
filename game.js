@@ -90,6 +90,7 @@ class SlimeSFX {
             [1046.5, 1318.5, 1568].forEach((f) => this.tone(f * up, 0.45, { type: 'sine', vol: 0.1, delay: 0.3 }));
         }
     }
+    twin() { this.tone(523.25, 0.18, { type: 'triangle', vol: 0.1 }); this.tone(493.9, 0.18, { type: 'square', vol: 0.05, delay: 0.09 }); this.tone(523.25, 0.25, { type: 'triangle', vol: 0.1, delay: 0.18 }); }
     land() { this.tone(180, 0.07, { type: 'sine', vol: 0.09, slide: 0.6 }); }
     blackhole() { this.tone(400, 0.6, { type: 'sine', vol: 0.12, slide: 0.15 }); this.tone(800, 0.5, { type: 'triangle', vol: 0.05, slide: 0.1, delay: 0.05 }); }
     purify() { [1046.5, 1318.5, 1568, 2093].forEach((f, i) => this.tone(f, 0.1, { type: 'sine', vol: 0.07, delay: 0.15 + i * 0.05 })); }
@@ -138,7 +139,10 @@ class SlimeTetris {
         this.special = !!opts.special;
         this.specialRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x51ED5EED) : Math.random;
         this.SPECIAL_RATE = 1 / 9;
-        this.SPECIAL_KINDS = [['star', 0.27], ['bomb', 0.23], ['melt', 0.18], ['zombie', 0.22], ['blackhole', 0.10]];
+        this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09]];
+        this.forcedO = 0;              // ☯ 雙生：接下來還剩幾個 2×2 方塊
+        this.twinRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x7A1A7A1A) : Math.random;
+        this.twinAt = 0; this.twinCount = 0;
         this.clearMods = null;
         this.sfx = window.__slimeSfx || (window.__slimeSfx = new SlimeSFX());
         // 方向鍵長按：鍵盤 / 觸控分開設定（DAS＝開始連續移動前的等待，ARR＝之後每格間隔，毫秒）
@@ -238,7 +242,9 @@ class SlimeTetris {
     }
 
     generatePiece() {
-        const type = this.getNextPieceFromBag();
+        let type = this.getNextPieceFromBag();
+        let twinO = false;
+        if (this.forcedO > 0) { type = 'O'; this.forcedO--; twinO = true; }   // ☯ 雙生效果：強制 2×2
         const m = this.SHAPES[type];
         const k = m.map(row => row.map(() => ''));
         if (this.special) {
@@ -248,13 +254,27 @@ class SlimeTetris {
             if (roll < this.SPECIAL_RATE) {
                 let acc = 0, kind = 'star';
                 for (const [name, w] of this.SPECIAL_KINDS) { acc += w; if (pickKind < acc) { kind = name; break; } }
+                // ☯ 雙生只在堆疊超過半場時出現；雙生與 🕳 黑洞不會同時在場上（條件不符就當作一般方塊，亂數照常消耗，PK 雙方順序不會錯開）
+                if (kind === 'twin' && (this.stackHeight() <= this.ROWS / 2 || this.kindOnField('blackhole'))) kind = '';
+                if (kind === 'blackhole' && this.kindOnField('twin')) kind = '';
                 const cells = [];
                 m.forEach((row, r) => row.forEach((v, c) => { if (v) cells.push([r, c]); }));
                 const [sr, sc] = cells[Math.floor(pickCell * cells.length)];
-                k[sr][sc] = kind;
+                if (kind) k[sr][sc] = kind;
             }
         }
-        return { type, m, k, c: this.COLORS[type], x: 0, y: 0 };
+        return { type, m, k, c: this.COLORS[type], x: 0, y: 0, twinO };
+    }
+
+    stackHeight() {
+        for (let r = 0; r < this.ROWS; r++) if (this.board[r].some(cell => cell !== 0)) return this.ROWS - r;
+        return 0;
+    }
+
+    // 盤面、操作中方塊、下一個方塊裡是否有某種特殊史萊姆
+    kindOnField(kind) {
+        if (this.board.some(row => row.some(cell => SlimeTetris.cellKind(cell) === kind))) return true;
+        return [this.piece, this.nextPiece].some(p => p && p.k && p.k.some(row => row.includes(kind)));
     }
 
     // 盤面格子的編碼："顏色" 或 "顏色|特殊種類"
@@ -278,6 +298,7 @@ class SlimeTetris {
         if (kind === 'zombie') color = '#8aa889';      // 殭屍：灰綠色
         if (kind === 'hard') color = '#55556a';        // 硬殼垃圾：深灰
         if (kind === 'blackhole') color = '#3a2a5e';   // 黑洞：深紫
+        if (kind === 'twin') color = '#f4f4f4';        // 雙生：黑白各半
         this.drawSlimeBody(ctx, x, y, color, size, fx);
         if (kind) this.drawAccessory(ctx, x * size, y * size, size, kind, fx);
     }
@@ -324,6 +345,18 @@ class SlimeTetris {
             ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.arc(px + s * 0.68, py + s * 0.47, s * 0.05, 0, Math.PI * 2); ctx.fill();
             ctx.strokeStyle = '#2d3a2d'; ctx.lineWidth = Math.max(1, s * 0.06);
             ctx.beginPath(); ctx.moveTo(px + s * 0.35, py + s * 0.74); ctx.lineTo(px + s * 0.45, py + s * 0.7); ctx.lineTo(px + s * 0.55, py + s * 0.74); ctx.lineTo(px + s * 0.65, py + s * 0.7); ctx.stroke();
+        } else if (kind === 'twin') {
+            ctx.save();
+            ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(px + 1, py + 1, s - 2, s - 2, s * 0.3); else ctx.rect(px + 1, py + 1, s - 2, s - 2); ctx.clip();
+            ctx.fillStyle = '#1b1b22';
+            ctx.beginPath(); ctx.moveTo(px + s / 2, py); ctx.bezierCurveTo(px + s * 0.25, py + s * 0.35, px + s * 0.75, py + s * 0.65, px + s / 2, py + s); ctx.lineTo(px, py + s); ctx.lineTo(px, py); ctx.closePath(); ctx.fill();
+            ctx.restore();
+            // 左（黑）眼改成白色，右（白）眼維持黑色
+            ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px + s * 0.35, py + s * 0.45, s * 0.12, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#1b1b22'; ctx.beginPath(); ctx.arc(px + s * 0.37, py + s * 0.46, s * 0.06, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#1b1b22'; ctx.beginPath(); ctx.arc(px + s * 0.65, py + s * 0.45, s * 0.12, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px + s * 0.63, py + s * 0.43, s * 0.045, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#1b1b22'; ctx.lineWidth = Math.max(1, s * 0.05); ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(px + 1, py + 1, s - 2, s - 2, s * 0.3); ctx.stroke();
         } else if (kind === 'blackhole') {
             const cx = px + s / 2, cy = py + s * 0.52;
             ctx.strokeStyle = 'rgba(190,150,255,.9)'; ctx.lineWidth = Math.max(1, s * 0.06);
@@ -443,6 +476,14 @@ class SlimeTetris {
                     this.drawSlimeBlock(this.nextCtx, (offsetX / size) + c, (offsetY / size) + r, this.nextPiece.c, size, null, (this.nextPiece.k && this.nextPiece.k[r][c]) || '');
                 }
             }
+        }
+        // ☯ 雙生剩餘次數（含預覽中的這一個）
+        const remain = this.forcedO + (this.nextPiece.twinO ? 1 : 0);
+        if (remain > 0) {
+            this.nextCtx.save();
+            this.nextCtx.fillStyle = '#f4f4f4'; this.nextCtx.font = 'bold 13px sans-serif'; this.nextCtx.textAlign = 'right';
+            this.nextCtx.fillText(`☯×${remain}`, this.NW - 3, 13);
+            this.nextCtx.restore();
         }
     }
 
@@ -737,6 +778,7 @@ class SlimeTetris {
                     if (k === 'star') mods.stars++;
                     else if (k === 'bomb') mods.bombs.push([r, c]);
                     else if (k === 'blackhole') mods.blackhole = true;
+                    else if (k === 'twin') mods.twin = true;
                     else if (k === 'zombie') { if (rowHasBomb) mods.purified++; else mods.zombies++; }
                 });
             });
@@ -746,6 +788,7 @@ class SlimeTetris {
             this.piece = null;
             this.sfx.clear(full.length, this.combo + 1);
             if (mods.bombs.length) this.sfx.bomb();
+            if (mods.twin) this.sfx.twin();
             if (mods.blackhole) this.sfx.blackhole();
             else if (mods.zombies) this.sfx.zombie();
             if (mods.purified) this.sfx.purify();
@@ -787,6 +830,17 @@ class SlimeTetris {
         }
         this.clearLines();
         this.clearMods = null;
+        if (mods && mods.twin) {
+            const n = 5 + Math.floor(this.twinRng() * 4);   // 5–8 個
+            this.forcedO = n;
+            this.twinCount = n; this.twinAt = performance.now();
+            // 下一個立刻變成 2×2（算在次數裡）。直接改造現有的預覽方塊，不多消耗亂數，PK 雙方的方塊順序不會錯開
+            if (this.nextPiece) {
+                const sp = (this.nextPiece.k || []).flat().find(Boolean) || '';
+                this.nextPiece = { type: 'O', m: this.SHAPES.O, k: [[sp, ''], ['', '']], c: this.COLORS.O, x: 0, y: 0, twinO: true };
+                this.forcedO = n - 1;
+            }
+        }
         if (mods && mods.blackhole) this.board = this.board.map(() => Array(this.COLS).fill(0));
         // 🧟 殭屍：每隻殭屍讓自己底下冒出 2 行垃圾（陷阱）
         if (mods && mods.zombies) {
@@ -1061,6 +1115,19 @@ class SlimeTetris {
         this.ctx.restore();
 
         this.lastDrawAt = now;
+
+        // ☯ 雙生觸發提示
+        if (this.twinAt && now - this.twinAt < 1300 && !this.gameOver) {
+            const t = (now - this.twinAt) / 1300;
+            this.ctx.save();
+            this.ctx.globalAlpha = 1 - t * t;
+            this.ctx.textAlign = 'center';
+            this.ctx.font = 'bold 15px sans-serif';
+            this.ctx.fillStyle = '#f4f4f4'; this.ctx.strokeStyle = '#1b1b22'; this.ctx.lineWidth = 4;
+            const txt = `☯ 雙生！連續 ${this.twinCount} 個 2×2`;
+            this.ctx.strokeText(txt, this.W / 2, this.H * 0.42); this.ctx.fillText(txt, this.W / 2, this.H * 0.42);
+            this.ctx.restore();
+        }
 
         // LEVEL UP 提示（約 0.9 秒）
         if (this.levelUpAt && now - this.levelUpAt < 900 && !this.gameOver) {
