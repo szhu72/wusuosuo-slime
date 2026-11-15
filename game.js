@@ -90,6 +90,7 @@ class SlimeSFX {
             [1046.5, 1318.5, 1568].forEach((f) => this.tone(f * up, 0.45, { type: 'sine', vol: 0.1, delay: 0.3 }));
         }
     }
+    emperor() { this.tone(196, 0.25, { type: 'square', vol: 0.06 }); this.tone(262, 0.25, { type: 'square', vol: 0.06, delay: 0.12 }); this.tone(392, 0.4, { type: 'triangle', vol: 0.09, delay: 0.24 }); }
     hatch() { this.tone(880, 0.06, { type: 'triangle', vol: 0.07 }); this.tone(1175, 0.08, { type: 'triangle', vol: 0.06, delay: 0.06 }); }
     twin() { this.tone(523.25, 0.18, { type: 'triangle', vol: 0.1 }); this.tone(493.9, 0.18, { type: 'square', vol: 0.05, delay: 0.09 }); this.tone(523.25, 0.25, { type: 'triangle', vol: 0.1, delay: 0.18 }); }
     land() { this.tone(180, 0.07, { type: 'sine', vol: 0.09, slide: 0.6 }); }
@@ -142,12 +143,15 @@ class SlimeTetris {
         this.specialRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x51ED5EED) : Math.random;
         this.SPECIAL_RATE = 1 / 9;
         this.TWIN_RATE = 0.12;   // 堆疊過半後，每顆方塊 12% 機率是雙生
-        this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09], ['queen', 0.12]];
+        this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09], ['queen', 0.12], ['flash', 0.14], ['powder', 0.08], ['emperor', 0.07]];
         this.forcedO = 0;              // ☯ 雙生：接下來還剩幾個 2×2 方塊
         this.twinRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x7A1A7A1A) : Math.random;
         this.twinAt = 0; this.twinCount = 0;
         // 👑 蟻后：每落下 2 顆方塊，場上每隻蟻后滋生 1 隻幼蟲（取代一般史萊姆，每隻蟻后最多 5 隻）；幼蟲 3 回合沒被消掉就長成新蟻后
         this.queenRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x51EE7A11) : Math.random;
+        // 🧨 火藥：分裂炸彈的位置用自己的亂數（PK 雙方不會錯開）
+        this.powderRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x9A0DE211) : Math.random;
+        this.emperorId = 0;
         this.colonyTicks = 0;
         this.QUEEN_SPAWN_EVERY = 2; this.QUEEN_MAX_LARVAE = 5; this.LARVA_GROW_TURNS = 3;
         this.QUEEN_BONUS = 300; this.QUEEN_COMBO_MUL = 2;
@@ -289,6 +293,9 @@ class SlimeTetris {
             }
             if (this.bug && this.safeLeft > 0) kind = '';
             if (this.bug && kind === 'queen' && this.bugQueens >= this.BUG_MAX_QUEENS) kind = '';   // 場上蟻后已滿   // 🛡 安全期：不出蟻后（亂數照常消耗）
+            // ⚡ 閃光：整顆變成 1 格的流星方塊（不多消耗亂數）
+            if (kind === 'flash' && !twinO) return { type: 'F', m: [[1]], k: [['flash']], c: '#48dbfb', x: 0, y: 0, twinO, flash: true };
+            if (kind === 'flash') kind = '';
             if (kind) {
                 const cells = [];
                 m.forEach((row, r) => row.forEach((v, c) => { if (v) cells.push([r, c]); }));
@@ -331,10 +338,14 @@ class SlimeTetris {
         if (kind === 'zombie') color = '#8aa889';      // 殭屍：灰綠色
         if (kind === 'hard') color = '#55556a';        // 硬殼垃圾：深灰
         if (kind === 'blackhole') color = '#3a2a5e';   // 黑洞：深紫
+        if (kind === 'powder') color = '#8e2d2d';      // 火藥：深紅
+        if (kind === 'emperor') color = '#f6b93b';     // 皇帝：金色
         if (kind === 'twin') color = '#f4f4f4';        // 雙生：黑白各半
         this.drawSlimeBody(ctx, x, y, color, size, fx);
         const cracked = kind === 'larva' && String(cell).split('|')[3] === '1';   // 裂開的幼蟲：不戴奶嘴、多一道裂痕
-        if (kind) this.drawAccessory(ctx, x * size, y * size, size, cracked ? 'larvaCracked' : kind, fx);
+        const charged = kind === 'flash' && (parseInt(String(cell).split('|')[2], 10) || 0) >= 2;   // ⚡ 蓄能完成：光芒變大
+        const emperorBody = kind === 'emperor' && String(cell).split('|')[2] !== undefined && String(cell).split('|')[3] !== '4';   // 皇帝身體只畫底色
+        if (kind && !emperorBody) this.drawAccessory(ctx, x * size, y * size, size, cracked ? 'larvaCracked' : charged ? 'flashCharged' : kind, fx);
         if (cracked) this.drawAccessory(ctx, x * size, y * size, size, 'crack', fx);
     }
 
@@ -447,6 +458,34 @@ class SlimeTetris {
         } else if (kind === 'crack') {
             ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.05);
             ctx.beginPath(); ctx.moveTo(px + s * 0.2, py + s * 0.62); ctx.lineTo(px + s * 0.38, py + s * 0.72); ctx.lineTo(px + s * 0.5, py + s * 0.6); ctx.lineTo(px + s * 0.66, py + s * 0.76); ctx.lineTo(px + s * 0.82, py + s * 0.66); ctx.stroke();
+        } else if (kind === 'flash' || kind === 'flashCharged') {
+            // 十字光：四道光芒＋中心亮點；蓄能後光芒更長、多四道斜光
+            const cx = px + s / 2, cy = py + s * 0.5, big = kind === 'flashCharged';
+            ctx.fillStyle = big ? '#fff9c4' : '#ffffff';
+            const L = s * (big ? 0.5 : 0.4), W = s * 0.07;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - L); ctx.lineTo(cx + W, cy - W); ctx.lineTo(cx + L, cy); ctx.lineTo(cx + W, cy + W);
+            ctx.lineTo(cx, cy + L); ctx.lineTo(cx - W, cy + W); ctx.lineTo(cx - L, cy); ctx.lineTo(cx - W, cy - W); ctx.closePath(); ctx.fill();
+            if (big) { ctx.strokeStyle = 'rgba(255,249,196,.9)'; ctx.lineWidth = Math.max(1, s * 0.04); ctx.beginPath(); [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([a, b]) => { ctx.moveTo(cx + a * s * 0.12, cy + b * s * 0.12); ctx.lineTo(cx + a * s * 0.3, cy + b * s * 0.3); }); ctx.stroke(); }
+            ctx.fillStyle = '#1e272e';
+            [0.36, 0.64].forEach((dx) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * 0.47, s * 0.06, 0, Math.PI * 2); ctx.fill(); });
+        } else if (kind === 'powder') {
+            // 火藥桶：兩道鐵箍＋頂上三點火花
+            ctx.strokeStyle = '#2d1a12'; ctx.lineWidth = Math.max(1, s * 0.07);
+            ctx.beginPath(); ctx.moveTo(px + s * 0.1, py + s * 0.26); ctx.lineTo(px + s * 0.9, py + s * 0.26); ctx.moveTo(px + s * 0.1, py + s * 0.78); ctx.lineTo(px + s * 0.9, py + s * 0.78); ctx.stroke();
+            [[0.3, 0.06, '#ff9f43'], [0.5, -0.02, '#ffe066'], [0.7, 0.06, '#ff9f43']].forEach(([dx, dy, col]) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px + s * dx, py + s * dy, s * 0.08, 0, Math.PI * 2); ctx.fill(); });
+            ctx.fillStyle = '#ffe066'; ctx.font = `bold ${Math.round(s * 0.26)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('×', px + s * 0.5, py + s * 0.72);
+        } else if (kind === 'emperor') {
+            // 皇帝：巨大皇冠＋落腮鬍（身體 3×3 時由 draw() 畫成一隻大皇帝）
+            ctx.fillStyle = '#ffd32a'; ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.04);
+            const y0 = py + s * 0.26, y1 = py - s * 0.06;
+            ctx.beginPath(); ctx.moveTo(px + s * 0.14, y0); ctx.lineTo(px + s * 0.14, y1 + s * 0.08); ctx.lineTo(px + s * 0.32, y1 + s * 0.16); ctx.lineTo(px + s * 0.5, y1);
+            ctx.lineTo(px + s * 0.68, y1 + s * 0.16); ctx.lineTo(px + s * 0.86, y1 + s * 0.08); ctx.lineTo(px + s * 0.86, y0); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#e84118'; ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.16, s * 0.045, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#6d4c41';
+            ctx.beginPath(); ctx.moveTo(px + s * 0.12, py + s * 0.5); ctx.quadraticCurveTo(px + s * 0.14, py + s * 0.95, px + s * 0.5, py + s * 0.97); ctx.quadraticCurveTo(px + s * 0.86, py + s * 0.95, px + s * 0.88, py + s * 0.5);
+            ctx.quadraticCurveTo(px + s * 0.8, py + s * 0.72, px + s * 0.62, py + s * 0.66); ctx.quadraticCurveTo(px + s * 0.5, py + s * 0.6, px + s * 0.38, py + s * 0.66); ctx.quadraticCurveTo(px + s * 0.2, py + s * 0.72, px + s * 0.12, py + s * 0.5); ctx.fill();
+            ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(px + s * 0.5, py + s * 0.72, s * 0.08, s * 0.04, 0, 0, Math.PI * 2); ctx.fill();
         } else if (kind === 'hard') {
             ctx.fillStyle = '#9aa0b4';
             ctx.beginPath(); ctx.moveTo(px + s * 0.08, py + s * 0.42); ctx.quadraticCurveTo(px + s * 0.5, py - s * 0.12, px + s * 0.92, py + s * 0.42); ctx.closePath(); ctx.fill();
@@ -673,6 +712,13 @@ class SlimeTetris {
         if (!this.piece) return null;
         let y = this.piece.y;
         while (!this.collide(this.piece.x, y + 1, this.piece.m)) y++;
+        if (this.piece.flash) y = this.flashTarget(this.piece.x, y);
+        return y;
+    }
+
+    // ⚡ 閃光：從落點往下穿透方塊，找這一欄最深的空洞；沒有洞就停在原落點
+    flashTarget(x, y) {
+        for (let r = this.ROWS - 1; r > y; r--) if (this.board[r][x] === 0) return r;
         return y;
     }
 
@@ -821,6 +867,7 @@ class SlimeTetris {
     }
 
     lock() {
+        if (this.piece && this.piece.flash) this.piece.y = this.flashTarget(this.piece.x, this.piece.y);   // ⚡ 流星穿透補洞
         // 鎖定方塊至網格
         this.piece.m.forEach((row, y) => {
             row.forEach((val, x) => {
@@ -836,6 +883,16 @@ class SlimeTetris {
         });
 
         this.triggerSquish();
+
+        // 🤴 皇帝：落地後吸收周圍 3×3，空洞填滿、其他史萊姆被吸收，變成皇帝的身體（不加分也不扣分）
+        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+            const cell = this.board[r][c];
+            if (SlimeTetris.cellKind(cell) !== 'emperor' || String(cell).split('|')[2] !== undefined) continue;
+            const r0 = Math.max(0, Math.min(this.ROWS - 3, r - 1)), c0 = Math.max(0, Math.min(this.COLS - 3, c - 1));
+            const id = ++this.emperorId;
+            for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) this.board[r0 + i][c0 + j] = `#f6b93b|emperor|${id}|${i * 3 + j}`;
+            this.sfx.emperor();
+        }
 
         // 💧 融化史萊姆：落地後往下滴，填滿正下方的空洞，之後變回一般史萊姆
         for (let r = this.ROWS - 1; r >= 0; r--) {
@@ -897,6 +954,7 @@ class SlimeTetris {
                     else if (k === 'blackhole') mods.blackhole = true;
                     else if (k === 'twin') mods.twin = true;
                     else if (k === 'queen') mods.queens++;
+                    else if (k === 'powder') mods.powder = (mods.powder || 0) + 1;
                     else if (k === 'zombie') { if (rowHasBomb) mods.purified++; else mods.zombies++; }
                 });
             });
@@ -965,6 +1023,8 @@ class SlimeTetris {
             }
         }
         if (mods && mods.blackhole) this.board = this.board.map(() => Array(this.COLS).fill(0));
+        // 🧨 火藥：消除後分裂成炸彈史萊姆，散在不同行（有方塊的行數一半，最多 6 顆）
+        if (mods && mods.powder && !mods.blackhole) this.scatterBombs();
         if (this.colonyTick()) { this.endGame(); return; }
         // 🧟 殭屍：每隻殭屍讓自己底下冒出 2 行垃圾（陷阱）
         if (mods && mods.zombies) {
@@ -976,6 +1036,13 @@ class SlimeTetris {
     // 👑 蟻后回合處理（每鎖定一顆方塊呼叫一次，在消行之後）
     colonyTick() {
         if (!this.special) return false;
+        // ⚡ 閃光落地後每回合 +1，滿 2 回合就蓄能完成
+        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+            const x = this.board[r][c];
+            if (SlimeTetris.cellKind(x) !== 'flash') continue;
+            const age = (parseInt(String(x).split('|')[2], 10) || 0);
+            if (age < 2) this.board[r][c] = `${SlimeTetris.cellColor(x)}|flash|${age + 1}`;
+        }
         if (this.bug) this.bugQueens = this.board.flat().filter(x => SlimeTetris.cellKind(x) === 'queen').length;
         if (this.safeLeft > 0) {   // 🛡 安全期：蟲不繁殖、不長大、不發怒，蟲潮也先暫停
             this.safeLeft--;
@@ -1072,6 +1139,23 @@ class SlimeTetris {
         return toppedOut;
     }
 
+    // 🧨 火藥分裂：挑不重複的行，各把一格一般史萊姆變成炸彈
+    scatterBombs() {
+        const rows = [];
+        for (let r = 0; r < this.ROWS; r++) if (this.board[r].some(x => x && !SlimeTetris.cellKind(x))) rows.push(r);
+        const n = Math.min(6, Math.floor(this.board.filter(row => row.some(x => x !== 0)).length / 2));
+        let placed = 0;
+        while (placed < n && rows.length) {
+            const r = rows.splice(Math.floor(this.powderRng() * rows.length), 1)[0];
+            const cols = [];
+            this.board[r].forEach((x, c) => { if (x && !SlimeTetris.cellKind(x)) cols.push(c); });
+            const c = cols[Math.floor(this.powderRng() * cols.length)];
+            this.board[r][c] = `${SlimeTetris.cellColor(this.board[r][c])}|bomb`;
+            placed++;
+        }
+        if (placed) { this.powderAt = performance.now(); this.powderCount = placed; this.sfx.bomb(); }
+    }
+
     // 🛡 安全期開始：場上蟻后與幼蟲全部變回普通史萊姆，接下來約 SAFE_PIECES 顆方塊沒有蟲
     startSafePeriod() {
         this.safeLeft = this.SAFE_PIECES;
@@ -1111,6 +1195,9 @@ class SlimeTetris {
 
     clearLines() {
         let cleared = 0;
+        // ⚡ 先數場上已蓄能的閃光（包含這次會被消掉的那幾隻）
+        const isCharged = (x) => SlimeTetris.cellKind(x) === 'flash' && (parseInt(String(x).split('|')[2], 10) || 0) >= 2;
+        const chargedN = this.board.flat().filter(isCharged).length;
         for (let r = this.ROWS - 1; r >= 0; r--) {
             if (this.board[r].every(cell => cell !== 0)) {
                 this.board.splice(r, 1);
@@ -1130,6 +1217,10 @@ class SlimeTetris {
             const comboRate = 0.5 * (mods.queens ? this.QUEEN_COMBO_MUL : 1);   // 👑 消掉蟻后：combo 加成翻倍
             let addScore = base * (1 + this.combo * comboRate) * (mods.stars ? 2 : 1) + (mods.purified || 0) * 100 + (mods.queens || 0) * this.QUEEN_BONUS;
             if (mods.blackhole) addScore = (addScore + (mods.vacuumed || 0) * 10) * 0.8;
+            // ⚡ 閃光：場上已蓄能（落地滿 2 回合）的閃光，每隻讓這次得分 +0.5 倍，用掉後變回一般史萊姆
+            const charged = chargedN;
+            for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) if (isCharged(this.board[r][c])) this.board[r][c] = SlimeTetris.cellColor(this.board[r][c]);
+            if (charged) { addScore *= 1 + 0.5 * charged; this.flashBoostAt = performance.now(); this.flashBoost = 1 + 0.5 * charged; }
             addScore = Math.round(addScore * this.SCORE_MUL * (this.bug ? 1 + this.BOUNTY_PER_QUEEN * this.bugQueens : 1));   // 👑 懸賞：場上每隻蟻后 +0.5 倍
             this.score += addScore;
             if (this.bug && this.score >= this.nextSafeAt) {
@@ -1284,6 +1375,17 @@ class SlimeTetris {
                 }
             }
         }
+        // 🤴 完整的 3×3 皇帝身體：畫成一隻大史萊姆＋大皇冠＋落腮鬍
+        for (let r = 1; r < this.ROWS - 1; r++) for (let c = 1; c < this.COLS - 1; c++) {
+            const ps = String(this.board[r][c]).split('|');
+            if (ps[1] !== 'emperor' || ps[3] !== '4' || (clr && clr.rows.some(rr => Math.abs(rr - r) <= 1))) continue;
+            let whole = true;
+            for (let i = -1; i <= 1 && whole; i++) for (let j = -1; j <= 1; j++) { const q = String(this.board[r + i][c + j]).split('|'); if (q[1] !== 'emperor' || q[2] !== ps[2]) { whole = false; break; } }
+            if (!whole) continue;
+            const S3 = this.SIZE * 3;
+            this.drawSlimeBody(this.ctx, (c - 1) / 3, (r - 1) / 3, '#f6b93b', S3);
+            this.drawAccessory(this.ctx, (c - 1) * this.SIZE, (r - 1) * this.SIZE, S3, 'emperor', null);
+        }
         if (clr && clr.mods && clr.mods.blackhole) {   // 黑洞漩渦
             const R = 10 + p * 70;
             const grd = this.ctx.createRadialGradient(this.W / 2, this.H / 2, 0, this.W / 2, this.H / 2, R);
@@ -1373,7 +1475,7 @@ class SlimeTetris {
 
         // LEVEL UP 提示（約 0.9 秒）
         // 🐜 蟲萊姆通啦：安全期開始／結束提示
-        [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43'], [this.waveAt, '🐜 蟲潮來襲！', '#a3cb38'], [this.furyAt, '👑 蟻后發怒！', '#ff6b6b']].forEach(([at, txt, color]) => {
+        [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43'], [this.waveAt, '🐜 蟲潮來襲！', '#a3cb38'], [this.furyAt, '👑 蟻后發怒！', '#ff6b6b'], [this.powderAt, `🧨 火藥分裂！${this.powderCount || 0} 顆炸彈`, '#ff9f43'], [this.flashBoostAt, `⚡ 閃光加成 ×${(this.flashBoost || 1).toFixed(1)}`, '#fff9c4']].forEach(([at, txt, color]) => {
             if (!at || now - at >= 1500 || this.gameOver) return;
             const t = (now - at) / 1500;
             this.ctx.save();
