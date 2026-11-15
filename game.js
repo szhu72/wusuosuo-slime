@@ -783,10 +783,18 @@ class SlimeTetris {
                 });
             });
             if (mods.blackhole) { mods.purified += mods.zombies; mods.zombies = 0; }
+            // 💣 炸彈：連同正上方、正下方「整行」一起炸掉（該行有方塊才算），當作一般消行計分
+            const fullSet = new Set(full);
+            mods.blastRows = [];
+            mods.bombs.forEach(([r]) => [r - 1, r + 1].forEach((rr) => {
+                if (rr >= 0 && rr < this.ROWS && !fullSet.has(rr) && !mods.blastRows.includes(rr) && this.board[rr].some(cell => cell !== 0)) mods.blastRows.push(rr);
+            }));
+            full.push(...mods.blastRows);
+            full.sort((a, b) => a - b);
             this.clearMods = mods;
             this.clearing = { rows: full, t0: performance.now(), mods };
             this.piece = null;
-            this.sfx.clear(full.length, this.combo + 1);
+            this.sfx.clear(full.length, this.combo + 1);   // full 已包含被炸掉的行
             if (mods.bombs.length) this.sfx.bomb();
             if (mods.twin) this.sfx.twin();
             if (mods.blackhole) this.sfx.blackhole();
@@ -808,16 +816,12 @@ class SlimeTetris {
     finishClear() {
         const mods = this.clearMods;
         this.clearing = null;
-        // 💣 炸彈：在整行消失前，先把炸彈正上方、正下方（非消除行）的格子炸掉
-        if (mods && mods.bombs.length) {
-            const rows = new Set();
-            for (let r = 0; r < this.ROWS; r++) if (this.board[r].every(cell => cell !== 0)) rows.add(r);
-            mods.bombs.forEach(([r, c]) => [r - 1, r + 1].forEach((rr) => {
-                if (rr >= 0 && rr < this.ROWS && !rows.has(rr) && this.board[rr][c]) {
-                    if (SlimeTetris.cellKind(this.board[rr][c]) === 'zombie') mods.purified++;
-                    this.board[rr][c] = 0; mods.blasted = (mods.blasted || 0) + 1;
-                }
-            }));
+        // 💣 炸彈：被炸的行裡若有殭屍 → 淨化；接著把整行填滿，讓它和滿行一起依一般規則消除計分
+        if (mods && mods.blastRows && mods.blastRows.length) {
+            mods.blastRows.forEach((r) => {
+                this.board[r].forEach((cell) => { if (SlimeTetris.cellKind(cell) === 'zombie') mods.purified++; });
+                this.board[r] = this.board[r].map((cell) => cell || '#ff9f43');
+            });
         }
         // 🕳 黑洞：吞掉滿行以外的所有方塊（殭屍一起被淨化），本次得分只拿 8 成
         if (mods && mods.blackhole) {
@@ -891,7 +895,7 @@ class SlimeTetris {
             
             // 連擊（Combo）加權：得分 = 基礎得分 × (1 + Combo數 × 0.5)；⭐ 星星史萊姆 ×2；💣 每炸掉 1 格 +20
             const mods = this.clearMods || {};
-            let addScore = base * (1 + this.combo * 0.5) * (mods.stars ? 2 : 1) + (mods.blasted || 0) * 20 + (mods.purified || 0) * 100;
+            let addScore = base * (1 + this.combo * 0.5) * (mods.stars ? 2 : 1) + (mods.purified || 0) * 100;
             if (mods.blackhole) addScore = (addScore + (mods.vacuumed || 0) * 10) * 0.8;
             this.score += addScore;
             this.lines += cleared;
