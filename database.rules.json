@@ -7,10 +7,11 @@
       ".indexOn": [
         "best",
         "bestSp",
-        "bestBug"
+        "bestBug",
+        "code"
       ],
       "$uid": {
-        ".write": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && (auth.uid === $uid || data.child('members').child(auth.uid).exists())",
         "name": {
           ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 12"
         },
@@ -55,6 +56,12 @@
         },
         "drawsBug": {
           ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "members": {
+          "$m": {
+            ".write": "auth != null && $m === auth.uid",
+            ".validate": "newData.val() === true"
+          }
         },
         "$other": {
           ".validate": false

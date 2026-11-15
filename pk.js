@@ -58,6 +58,11 @@
                 const list = []; s.forEach((c) => { list.push(c.val()); });
                 return list.filter((p) => p && p[field] > 0).sort((a, b) => b[field] - a[field]);
             },
+            findByCode: async (code) => {
+                const s = await db.get(db.query(r('players'), db.orderByChild('code'), db.equalTo(code)));
+                const list = []; s.forEach((c) => { list.push({ pid: c.key, ...c.val() }); });
+                return list;
+            },
         };
     }
 
@@ -92,6 +97,7 @@
             onDisconnectUpdate: async (p, v) => { discUpdates.push([p, Object.fromEntries(Object.entries(v).map(([k, val]) => [k, typeof val === 'object' ? '__now__' : val]))]); },
             cancelOnDisconnect: async () => { discUpdates.length = 0; },
             topBest: async (n, field = 'best') => Object.values(read().players || {}).filter((p) => p && p[field] > 0).sort((a, b) => b[field] - a[field]).slice(0, n),
+            findByCode: async (code) => Object.entries(read().players || {}).filter(([, v]) => v && v.code === code).map(([pid, v]) => ({ pid, ...v })),
         };
     }
 
@@ -214,22 +220,58 @@
         $('#pk-rename').onclick = () => askName(true);
     }
 
+    // 身分（個人紀錄）：pid 是紀錄存放的位置；預設等於這台裝置的登入 uid
+    const PROFILE_KEY = 'slime_profile_uid';
+    function loadProfile(pid, saved) {
+        me.pid = pid;
+        me.code = shortCode(pid);
+        me.name = saved.name || '';
+        ['best', 'wins', 'losses', 'draws'].forEach((k) => { me[k] = saved[k] || 0; me[k + 'Sp'] = saved[k + 'Sp'] || 0; me[k + 'Bug'] = saved[k + 'Bug'] || 0; });
+    }
+    // 「名字#ID」完全相符就接回那個身分（ID 不同就是不同人）；回傳錯誤訊息，成功回傳空字串
+    async function linkIdentity(raw) {
+        const i = raw.lastIndexOf('#');
+        const name = raw.slice(0, i).trim(), code = raw.slice(i + 1).trim().toUpperCase();
+        if (!name || code.length !== 4) return '格式是「名字#ID」，ID 是 4 個字，例如 史萊姆王#AB12';
+        let found = [];
+        try { found = await net.findByCode(code); } catch (e) { return '查詢失敗：' + (e.code || e.message || e); }
+        const hit = found.find((p) => p.name === name && shortCode(p.pid) === code);
+        if (!hit) return `找不到「${name}#${code}」，名字和 ID 要完全一樣`;
+        if (hit.pid !== net.uid) {
+            try { await net.update(`players/${hit.pid}/members`, { [net.uid]: true }); }
+            catch (e) { return '接回失敗：' + (e.code || e.message || e); }
+        }
+        try { if (hit.pid === net.uid) localStorage.removeItem(PROFILE_KEY); else localStorage.setItem(PROFILE_KEY, hit.pid); } catch {}
+        loadProfile(hit.pid, hit);
+        return '';
+    }
+
     // 暱稱輸入：直接在頁面上顯示輸入框（不使用 prompt，避免 App 內建瀏覽器不支援）
     function askName(force) {
         if (me.name && !force) return Promise.resolve();
         return new Promise((resolve) => {
             $('#pk-me').innerHTML = `
               <label class="pk-hint" for="pk-name-input">${me.name ? '修改暱稱' : '先取一個暱稱，朋友會看到這個名字'}（最多 8 個字）</label>
+              <div class="pk-hint">在別的裝置玩過？輸入「名字#ID」（例如 史萊姆王#AB12）就能接回原本的紀錄</div>
               <div class="pk-join" style="margin-top:6px">
-                <input id="pk-name-input" type="text" maxlength="8" placeholder="例如：史萊姆王" value="${esc(me.name || '')}" autocomplete="off">
+                <input id="pk-name-input" type="text" maxlength="14" placeholder="例如：史萊姆王" value="${esc(me.name || '')}" autocomplete="off">
                 <button id="pk-name-ok" class="ui-btn primary">確定</button>
               </div>`;
             const input = $('#pk-name-input');
             const done = async () => {
-                const name = input.value.trim().slice(0, 8) || me.name || ('史萊姆' + me.code);
+                const raw = input.value.trim();
+                if (raw.includes('#')) {   // 「名字#ID」：接回其他裝置的身分
+                    $('#pk-name-ok').disabled = true;
+                    const msg = await linkIdentity(raw);
+                    $('#pk-name-ok').disabled = false;
+                    if (msg) { status(msg); return; }
+                    status(`已接回「${me.name} #${me.code}」的紀錄 🎉`);
+                    renderMe(); loadRanking(); resolve(); return;
+                }
+                const name = raw.slice(0, 8) || me.name || ('史萊姆' + me.code);
                 $('#pk-name-ok').disabled = true;
                 me.name = name;
-                try { await net.update(`players/${me.uid}`, { name, code: me.code, updatedAt: SERVER_TIME }); }
+                try { await net.update(`players/${me.pid}`, { name, code: me.code, updatedAt: SERVER_TIME }); }
                 catch (e) { status('暱稱儲存失敗：' + (e.code || e.message || e)); }
                 renderMe();
                 resolve();
@@ -573,7 +615,7 @@
             const upd = { [statKey]: me[statKey], name: me.name, code: me.code, updatedAt: SERVER_TIME };
             if (isPB) { me[bestKey] = myScore; upd[bestKey] = myScore; }
             // 背景存戰績：失敗或很慢都不會卡住結果畫面
-            net.update(`players/${me.uid}`, upd).catch((e) => {
+            net.update(`players/${me.pid}`, upd).catch((e) => {
                 console.warn(e);
                 const pb = document.getElementById('pk-pb-line');
                 if (pb) pb.textContent = `戰績儲存失敗（${e.code || e.message || e}）`;
@@ -641,7 +683,7 @@
                 if (isPB) {
                     me[bestKey] = score;
                     try {
-                        await net.update(`players/${me.uid}`, { [bestKey]: score, name: me.name, code: me.code, updatedAt: SERVER_TIME });
+                        await net.update(`players/${me.pid}`, { [bestKey]: score, name: me.name, code: me.code, updatedAt: SERVER_TIME });
                         note.textContent = `🎉 新個人紀錄 ${score} 分！已更新「${variantName(v)}」排行榜`;
                     } catch (e) {
                         console.warn(e);
@@ -734,9 +776,13 @@
             status('無法連線到 PK 伺服器，先玩單人模式吧。（' + (e.code || e.message || e) + '）');
             return;
         }
-        const saved = (await net.get(`players/${net.uid}`)) || {};
-        me = { uid: net.uid, code: shortCode(net.uid), name: saved.name || '' };
-        ['best', 'wins', 'losses', 'draws'].forEach((k) => { me[k] = saved[k] || 0; me[k + 'Sp'] = saved[k + 'Sp'] || 0; me[k + 'Bug'] = saved[k + 'Bug'] || 0; });
+        // 身分：預設是這台裝置；若之前用「名字#ID」接回其他裝置的身分，就沿用那個身分的紀錄
+        let pid = net.uid;
+        try { const linked = localStorage.getItem(PROFILE_KEY); if (linked) pid = linked; } catch {}
+        let saved = (await net.get(`players/${pid}`)) || null;
+        if (!saved && pid !== net.uid) { pid = net.uid; saved = (await net.get(`players/${pid}`)) || null; try { localStorage.removeItem(PROFILE_KEY); } catch {} }
+        me = { uid: net.uid };
+        loadProfile(pid, saved || {});
         renderMe();
         status('');
         const namePromise = askName(false);
