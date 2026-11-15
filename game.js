@@ -91,6 +91,7 @@ class SlimeSFX {
         }
     }
     emperor() { this.tone(196, 0.25, { type: 'square', vol: 0.06 }); this.tone(262, 0.25, { type: 'square', vol: 0.06, delay: 0.12 }); this.tone(392, 0.4, { type: 'triangle', vol: 0.09, delay: 0.24 }); }
+    rooster() { this.tone(659, 0.08, { type: 'square', vol: 0.06 }); this.tone(784, 0.08, { type: 'square', vol: 0.06, delay: 0.09 }); this.tone(988, 0.35, { type: 'square', vol: 0.07, slide: 0.7, delay: 0.18 }); }
     hatch() { this.tone(880, 0.06, { type: 'triangle', vol: 0.07 }); this.tone(1175, 0.08, { type: 'triangle', vol: 0.06, delay: 0.06 }); }
     twin() { this.tone(523.25, 0.18, { type: 'triangle', vol: 0.1 }); this.tone(493.9, 0.18, { type: 'square', vol: 0.05, delay: 0.09 }); this.tone(523.25, 0.25, { type: 'triangle', vol: 0.1, delay: 0.18 }); }
     land() { this.tone(180, 0.07, { type: 'sine', vol: 0.09, slide: 0.6 }); }
@@ -143,7 +144,7 @@ class SlimeTetris {
         this.specialRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x51ED5EED) : Math.random;
         this.SPECIAL_RATE = 1 / 9;
         this.TWIN_RATE = 0.12;   // 堆疊過半後，每顆方塊 12% 機率是雙生
-        this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09], ['queen', 0.12], ['flash', 0.14], ['powder', 0.08], ['emperor', 0.07]];
+        this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09], ['queen', 0.12], ['flash', 0.14], ['powder', 0.08], ['emperor', 0.07], ['rooster', 0.07]];
         this.forcedO = 0;              // ☯ 雙生：接下來還剩幾個 2×2 方塊
         this.twinRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x7A1A7A1A) : Math.random;
         this.twinAt = 0; this.twinCount = 0;
@@ -341,6 +342,8 @@ class SlimeTetris {
         if (kind === 'blackhole') color = '#3a2a5e';   // 黑洞：深紫
         if (kind === 'powder') color = '#8e2d2d';      // 火藥：深紅
         if (kind === 'emperor') color = '#f6b93b';     // 皇帝：金色
+        if (kind === 'rooster') color = '#f5f6fa';     // 香雞：白色公雞
+        if (kind === 'egg') color = '#fffef5';         // 荷包蛋：蛋白
         if (kind === 'twin') color = '#f4f4f4';        // 雙生：黑白各半
         this.drawSlimeBody(ctx, x, y, color, size, fx);
         const cracked = kind === 'larva' && String(cell).split('|')[3] === '1';   // 裂開的幼蟲：不戴奶嘴、多一道裂痕
@@ -487,6 +490,21 @@ class SlimeTetris {
             ctx.beginPath(); ctx.moveTo(px + s * 0.12, py + s * 0.5); ctx.quadraticCurveTo(px + s * 0.14, py + s * 0.95, px + s * 0.5, py + s * 0.97); ctx.quadraticCurveTo(px + s * 0.86, py + s * 0.95, px + s * 0.88, py + s * 0.5);
             ctx.quadraticCurveTo(px + s * 0.8, py + s * 0.72, px + s * 0.62, py + s * 0.66); ctx.quadraticCurveTo(px + s * 0.5, py + s * 0.6, px + s * 0.38, py + s * 0.66); ctx.quadraticCurveTo(px + s * 0.2, py + s * 0.72, px + s * 0.12, py + s * 0.5); ctx.fill();
             ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(px + s * 0.5, py + s * 0.72, s * 0.08, s * 0.04, 0, 0, Math.PI * 2); ctx.fill();
+        } else if (kind === 'rooster') {
+            // 大公雞：紅雞冠、橘色尖嘴、紅肉垂、尾羽
+            ctx.fillStyle = '#e84118';
+            [[0.36, 0.1, 0.1], [0.5, 0.04, 0.12], [0.64, 0.1, 0.1]].forEach(([dx, dy, rr]) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * dy, s * rr, 0, Math.PI * 2); ctx.fill(); });
+            ctx.fillStyle = '#ff9f1a'; ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.03);
+            ctx.beginPath(); ctx.moveTo(px + s * 0.42, py + s * 0.58); ctx.lineTo(px + s * 0.58, py + s * 0.58); ctx.lineTo(px + s * 0.5, py + s * 0.72); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#e84118'; ctx.beginPath(); ctx.ellipse(px + s * 0.5, py + s * 0.8, s * 0.05, s * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#2f3542'; [[-0.1, 0], [0, -0.06], [0.1, 0]].forEach(([a, b]) => { ctx.beginPath(); ctx.ellipse(px + s * (0.9 + a * 0.2), py + s * (0.55 + b), s * 0.05, s * 0.14, 0.5 + a * 3, 0, Math.PI * 2); ctx.fill(); });
+        } else if (kind === 'egg') {
+            // 荷包蛋：大大的蛋黃，眼睛畫在蛋黃上
+            ctx.fillStyle = '#fffef5'; ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.5, s * 0.4, 0, Math.PI * 2); ctx.fill();   // 蓋掉原本的眼睛
+            ctx.fillStyle = '#feca57'; ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.52, s * 0.26, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.arc(px + s * 0.42, py + s * 0.44, s * 0.07, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#1e272e'; [0.42, 0.58].forEach((dx) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * 0.52, s * 0.045, 0, Math.PI * 2); ctx.fill(); });
+            ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.03); ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.6, s * 0.06, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
         } else if (kind === 'hard') {
             ctx.fillStyle = '#9aa0b4';
             ctx.beginPath(); ctx.moveTo(px + s * 0.08, py + s * 0.42); ctx.quadraticCurveTo(px + s * 0.5, py - s * 0.12, px + s * 0.92, py + s * 0.42); ctx.closePath(); ctx.fill();
@@ -888,6 +906,17 @@ class SlimeTetris {
 
         this.triggerSquish();
 
+        // 🐓 香雞：落地後，以牠所在的欄為中心、左右各一欄，整欄所有史萊姆都變成荷包蛋
+        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+            if (SlimeTetris.cellKind(this.board[r][c]) !== 'rooster') continue;
+            let eggs = 0;
+            for (let cc = Math.max(0, c - 1); cc <= Math.min(this.COLS - 1, c + 1); cc++) for (let rr = 0; rr < this.ROWS; rr++) {
+                if (this.board[rr][cc] && SlimeTetris.cellKind(this.board[rr][cc]) !== 'rooster') { this.board[rr][cc] = '#fffef5|egg'; eggs++; }
+            }
+            this.board[r][c] = '#fffef5|egg'; eggs++;
+            this.eggAt = performance.now(); this.eggCount = eggs; this.sfx.rooster();
+        }
+
         // 🤴 皇帝：落地後吸收周圍 3×3，空洞填滿、其他史萊姆被吸收，變成皇帝的身體（不加分也不扣分）
         for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
             const cell = this.board[r][c];
@@ -1202,8 +1231,10 @@ class SlimeTetris {
         // ⚡ 先數場上已蓄能的閃光（包含這次會被消掉的那幾隻）
         const isCharged = (x) => SlimeTetris.cellKind(x) === 'flash' && (parseInt(String(x).split('|')[2], 10) || 0) >= 2;
         const chargedN = this.board.flat().filter(isCharged).length;
+        let eggs = 0;
         for (let r = this.ROWS - 1; r >= 0; r--) {
             if (this.board[r].every(cell => cell !== 0)) {
+                eggs += this.board[r].filter(cell => SlimeTetris.cellKind(cell) === 'egg').length;   // 🍳 荷包蛋
                 this.board.splice(r, 1);
                 this.board.unshift(Array(this.COLS).fill(0));
                 cleared++;
@@ -1226,6 +1257,7 @@ class SlimeTetris {
             for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) if (isCharged(this.board[r][c])) this.board[r][c] = SlimeTetris.cellColor(this.board[r][c]);
             if (charged) { addScore *= 1 + 0.5 * charged; this.flashBoostAt = performance.now(); this.flashBoost = 1 + 0.5 * charged; }
             addScore = Math.round(addScore * this.SCORE_MUL * this.levelScoreMul() * (this.bug ? 1 + this.BOUNTY_PER_QUEEN * this.bugQueens : 1));   // 👑 懸賞：場上每隻蟻后 +0.5 倍
+            addScore += eggs * 5;   // 🍳 每顆荷包蛋 +5 分（照一般消行才拿得到）
             this.score += addScore;
             if (this.bug && this.score >= this.nextSafeAt) {
                 while (this.score >= this.nextSafeAt) this.nextSafeAt += this.SAFE_EVERY;
@@ -1479,7 +1511,7 @@ class SlimeTetris {
 
         // LEVEL UP 提示（約 0.9 秒）
         // 🐜 蟲萊姆通啦：安全期開始／結束提示
-        [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43'], [this.waveAt, '🐜 蟲潮來襲！', '#a3cb38'], [this.furyAt, '👑 蟻后發怒！', '#ff6b6b'], [this.powderAt, `🧨 火藥分裂！${this.powderCount || 0} 顆炸彈`, '#ff9f43'], [this.flashBoostAt, `⚡ 閃光加成 ×${(this.flashBoost || 1).toFixed(1)}`, '#fff9c4']].forEach(([at, txt, color]) => {
+        [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43'], [this.waveAt, '🐜 蟲潮來襲！', '#a3cb38'], [this.furyAt, '👑 蟻后發怒！', '#ff6b6b'], [this.powderAt, `🧨 火藥分裂！${this.powderCount || 0} 顆炸彈`, '#ff9f43'], [this.flashBoostAt, `⚡ 閃光加成 ×${(this.flashBoost || 1).toFixed(1)}`, '#fff9c4'], [this.eggAt, `🐓 咕咕咕！${this.eggCount || 0} 顆荷包蛋`, '#feca57']].forEach(([at, txt, color]) => {
             if (!at || now - at >= 1500 || this.gameOver) return;
             const t = (now - at) / 1500;
             this.ctx.save();
