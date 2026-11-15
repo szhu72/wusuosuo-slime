@@ -90,6 +90,7 @@ class SlimeSFX {
             [1046.5, 1318.5, 1568].forEach((f) => this.tone(f * up, 0.45, { type: 'sine', vol: 0.1, delay: 0.3 }));
         }
     }
+    hatch() { this.tone(880, 0.06, { type: 'triangle', vol: 0.07 }); this.tone(1175, 0.08, { type: 'triangle', vol: 0.06, delay: 0.06 }); }
     twin() { this.tone(523.25, 0.18, { type: 'triangle', vol: 0.1 }); this.tone(493.9, 0.18, { type: 'square', vol: 0.05, delay: 0.09 }); this.tone(523.25, 0.25, { type: 'triangle', vol: 0.1, delay: 0.18 }); }
     land() { this.tone(180, 0.07, { type: 'sine', vol: 0.09, slide: 0.6 }); }
     blackhole() { this.tone(400, 0.6, { type: 'sine', vol: 0.12, slide: 0.15 }); this.tone(800, 0.5, { type: 'triangle', vol: 0.05, slide: 0.1, delay: 0.05 }); }
@@ -140,10 +141,15 @@ class SlimeTetris {
         this.specialRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x51ED5EED) : Math.random;
         this.SPECIAL_RATE = 1 / 9;
         this.TWIN_RATE = 0.12;   // 堆疊過半後，每顆方塊 12% 機率是雙生
-        this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09]];
+        this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09], ['queen', 0.12]];
         this.forcedO = 0;              // ☯ 雙生：接下來還剩幾個 2×2 方塊
         this.twinRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x7A1A7A1A) : Math.random;
         this.twinAt = 0; this.twinCount = 0;
+        // 👑 蟻后：每落下 2 顆方塊，場上每隻蟻后滋生 1 隻幼蟲（取代一般史萊姆，每隻蟻后最多 5 隻）；幼蟲 3 回合沒被消掉就長成新蟻后
+        this.queenRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x51EE7A11) : Math.random;
+        this.colonyTicks = 0;
+        this.QUEEN_SPAWN_EVERY = 2; this.QUEEN_MAX_LARVAE = 5; this.LARVA_GROW_TURNS = 3;
+        this.QUEEN_BONUS = 300; this.QUEEN_COMBO_MUL = 2;
         this.clearMods = null;
         this.sfx = window.__slimeSfx || (window.__slimeSfx = new SlimeSFX());
         // 方向鍵長按：鍵盤 / 觸控分開設定（DAS＝開始連續移動前的等待，ARR＝之後每格間隔，毫秒）
@@ -371,6 +377,24 @@ class SlimeTetris {
             ctx.strokeStyle = 'rgba(190,150,255,.9)'; ctx.lineWidth = Math.max(1, s * 0.06);
             for (let i = 0; i < 2; i++) { ctx.beginPath(); ctx.ellipse(cx, cy, s * (0.42 - i * 0.12), s * (0.16 - i * 0.05), -0.35, 0, Math.PI * 2); ctx.stroke(); }
             ctx.fillStyle = '#05030c'; ctx.beginPath(); ctx.arc(cx, cy, s * 0.11, 0, Math.PI * 2); ctx.fill();
+        } else if (kind === 'queen' || kind === 'larva') {
+            const q = kind === 'queen';
+            if (!q) { ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(px + 1, py + 1, s - 2, s - 2, s * 0.3); else ctx.rect(px + 1, py + 1, s - 2, s - 2); ctx.fill(); }
+            ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * (q ? 0.055 : 0.045));
+            const ah = q ? 0.2 : 0.14;
+            ctx.beginPath();
+            ctx.moveTo(px + s * 0.36, py + s * 0.22); ctx.quadraticCurveTo(px + s * 0.28, py + s * (0.22 - ah), px + s * 0.18, py + s * (0.2 - ah));
+            ctx.moveTo(px + s * 0.64, py + s * 0.22); ctx.quadraticCurveTo(px + s * 0.72, py + s * (0.22 - ah), px + s * 0.82, py + s * (0.2 - ah));
+            ctx.stroke();
+            ctx.fillStyle = '#1e272e';
+            [0.18, 0.82].forEach((dx) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * (0.2 - ah), s * 0.045, 0, Math.PI * 2); ctx.fill(); });
+            if (q) {
+                const y0 = py + s * 0.24, y1 = py + s * 0.02;
+                ctx.fillStyle = '#ffd32a';
+                ctx.beginPath(); ctx.moveTo(px + s * 0.3, y0); ctx.lineTo(px + s * 0.3, y1 + s * 0.08); ctx.lineTo(px + s * 0.4, y1 + s * 0.14); ctx.lineTo(px + s * 0.5, y1);
+                ctx.lineTo(px + s * 0.6, y1 + s * 0.14); ctx.lineTo(px + s * 0.7, y1 + s * 0.08); ctx.lineTo(px + s * 0.7, y0); ctx.closePath(); ctx.fill();
+                ctx.lineWidth = Math.max(1, s * 0.04); ctx.stroke();
+            }
         } else if (kind === 'hard') {
             ctx.fillStyle = '#9aa0b4';
             ctx.beginPath(); ctx.moveTo(px + s * 0.08, py + s * 0.42); ctx.quadraticCurveTo(px + s * 0.5, py - s * 0.12, px + s * 0.92, py + s * 0.42); ctx.closePath(); ctx.fill();
@@ -779,7 +803,7 @@ class SlimeTetris {
         if (full.length) {
             // 結算消除行裡的特殊史萊姆：⭐ 計分 ×2、攻擊 +1；💣 炸掉上下格；🧟 自己加兩行垃圾
             // 🧟 殭屍若與 💣 炸彈在同一行、或被 🕳 黑洞吞掉 → 淨化（不懲罰，還加分）
-            const mods = { stars: 0, bombs: [], zombies: 0, purified: 0, blackhole: false };
+            const mods = { stars: 0, bombs: [], zombies: 0, purified: 0, blackhole: false, queens: 0 };
             full.forEach((r) => {
                 const kinds = this.board[r].map(SlimeTetris.cellKind);
                 const rowHasBomb = kinds.includes('bomb');
@@ -788,6 +812,7 @@ class SlimeTetris {
                     else if (k === 'bomb') mods.bombs.push([r, c]);
                     else if (k === 'blackhole') mods.blackhole = true;
                     else if (k === 'twin') mods.twin = true;
+                    else if (k === 'queen') mods.queens++;
                     else if (k === 'zombie') { if (rowHasBomb) mods.purified++; else mods.zombies++; }
                 });
             });
@@ -815,6 +840,7 @@ class SlimeTetris {
 
         this.sfx.land();
         this.clearLines();
+        this.colonyTick();
         if (this.pendingGarbage > 0) {
             this.sfx.garbage();
             if (this.applyGarbage()) { this.endGame(); return; }
@@ -828,7 +854,7 @@ class SlimeTetris {
         // 💣 炸彈：被炸的行裡若有殭屍 → 淨化；接著把整行填滿，讓它和滿行一起依一般規則消除計分
         if (mods && mods.blastRows && mods.blastRows.length) {
             mods.blastRows.forEach((r) => {
-                this.board[r].forEach((cell) => { if (SlimeTetris.cellKind(cell) === 'zombie') mods.purified++; });
+                this.board[r].forEach((cell) => { const k = SlimeTetris.cellKind(cell); if (k === 'zombie') mods.purified++; else if (k === 'queen') mods.queens++; });
                 this.board[r] = this.board[r].map((cell) => cell || '#ff9f43');
             });
         }
@@ -855,11 +881,48 @@ class SlimeTetris {
             }
         }
         if (mods && mods.blackhole) this.board = this.board.map(() => Array(this.COLS).fill(0));
+        this.colonyTick();
         // 🧟 殭屍：每隻殭屍讓自己底下冒出 2 行垃圾（陷阱）
         if (mods && mods.zombies) {
             if (this.addGarbageRows(Math.min(4, mods.zombies * 2), false)) { this.endGame(); return; }
         }
         this.spawnAndCheck();
+    }
+
+    // 👑 蟻后回合處理（每鎖定一顆方塊呼叫一次，在消行之後）
+    colonyTick() {
+        if (!this.special) return;
+        this.colonyTicks++;
+        let grew = 0, hatched = 0;
+        // 幼蟲長大：格子編碼 "顏色|larva|回合數"，滿 LARVA_GROW_TURNS 就變成新蟻后 "顏色|queen|0"
+        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+            const cell = this.board[r][c];
+            if (SlimeTetris.cellKind(cell) !== 'larva') continue;
+            const age = (parseInt(String(cell).split('|')[2], 10) || 0) + 1;
+            const color = SlimeTetris.cellColor(cell);
+            if (age >= this.LARVA_GROW_TURNS) { this.board[r][c] = `${color}|queen|0`; grew++; }
+            else this.board[r][c] = `${color}|larva|${age}`;
+        }
+        // 蟻后滋生：每 QUEEN_SPAWN_EVERY 顆方塊一次，隨機取代一格一般史萊姆
+        if (this.colonyTicks % this.QUEEN_SPAWN_EVERY === 0) {
+            for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+                const cell = this.board[r][c];
+                if (SlimeTetris.cellKind(cell) !== 'queen') continue;
+                const made = parseInt(String(cell).split('|')[2], 10) || 0;
+                if (made >= this.QUEEN_MAX_LARVAE) continue;
+                const spots = [];
+                for (let rr = 0; rr < this.ROWS; rr++) for (let cc = 0; cc < this.COLS; cc++) {
+                    const x = this.board[rr][cc];
+                    if (x && !SlimeTetris.cellKind(x) && SlimeTetris.cellColor(x) !== '#6b6b80') spots.push([rr, cc]);
+                }
+                if (!spots.length) continue;
+                const [sr, sc] = spots[Math.floor(this.queenRng() * spots.length)];
+                this.board[sr][sc] = `${SlimeTetris.cellColor(this.board[sr][sc])}|larva|0`;
+                this.board[r][c] = `${SlimeTetris.cellColor(cell)}|queen|${made + 1}`;
+                hatched++;
+            }
+        }
+        if (hatched || grew) this.sfx.hatch();
     }
 
     spawnAndCheck() {
@@ -904,7 +967,8 @@ class SlimeTetris {
             
             // 連擊（Combo）加權：得分 = 基礎得分 × (1 + Combo數 × 0.5)；⭐ 星星史萊姆 ×2；💣 每炸掉 1 格 +20
             const mods = this.clearMods || {};
-            let addScore = base * (1 + this.combo * 0.5) * (mods.stars ? 2 : 1) + (mods.purified || 0) * 100;
+            const comboRate = 0.5 * (mods.queens ? this.QUEEN_COMBO_MUL : 1);   // 👑 消掉蟻后：combo 加成翻倍
+            let addScore = base * (1 + this.combo * comboRate) * (mods.stars ? 2 : 1) + (mods.purified || 0) * 100 + (mods.queens || 0) * this.QUEEN_BONUS;
             if (mods.blackhole) addScore = (addScore + (mods.vacuumed || 0) * 10) * 0.8;
             this.score += addScore;
             this.lines += cleared;
