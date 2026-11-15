@@ -6,7 +6,8 @@
       ".read": "auth != null",
       ".indexOn": [
         "best",
-        "bestSp"
+        "bestSp",
+        "bestBug"
       ],
       "$uid": {
         ".write": "auth != null && auth.uid === $uid",
@@ -43,6 +44,18 @@
         "drawsSp": {
           ".validate": "newData.isNumber() && newData.val() >= 0"
         },
+        "bestBug": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9999999"
+        },
+        "winsBug": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "lossesBug": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "drawsBug": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
         "$other": {
           ".validate": false
         }
@@ -76,6 +89,9 @@
           ".validate": "newData.isString() && newData.val() !== newData.parent().child('host').val()"
         },
         "special": {
+          ".validate": "newData.isBoolean()"
+        },
+        "bug": {
           ".validate": "newData.isBoolean()"
         }
       }

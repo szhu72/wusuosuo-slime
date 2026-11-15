@@ -138,6 +138,7 @@ class SlimeTetris {
         this.pendingHard = 0;      // 其中幾行是硬殼垃圾（特殊模式 PK）
         // 特殊史萊姆模式：約每 9 塊出現 1 個特殊史萊姆（PK 用共同種子，雙方同時同位置出現）
         this.special = !!opts.special;
+        this.bug = !!opts.bug;          // 🐜 蟲萊姆通啦：只出現蟻后＋幼蟲
         this.specialRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x51ED5EED) : Math.random;
         this.SPECIAL_RATE = 1 / 9;
         this.TWIN_RATE = 0.12;   // 堆疊過半後，每顆方塊 12% 機率是雙生
@@ -150,6 +151,11 @@ class SlimeTetris {
         this.colonyTicks = 0;
         this.QUEEN_SPAWN_EVERY = 2; this.QUEEN_MAX_LARVAE = 5; this.LARVA_GROW_TURNS = 3;
         this.QUEEN_BONUS = 300; this.QUEEN_COMBO_MUL = 2;
+        // 🐜 蟲萊姆通啦：蟻后更常出現、繁殖更快、分數 ×1.5；分數每突破 1 萬進入安全期（約 10 顆方塊沒有蟲）
+        this.SCORE_MUL = 1;
+        this.SAFE_EVERY = 10000; this.SAFE_PIECES = 10;
+        this.safeLeft = 0; this.nextSafeAt = this.SAFE_EVERY; this.safeAt = 0; this.dangerAt = 0;
+        if (this.bug) { this.SPECIAL_RATE = 1 / 5; this.QUEEN_SPAWN_EVERY = 1; this.LARVA_GROW_TURNS = 2; this.SCORE_MUL = 1.5; }
         this.clearMods = null;
         this.sfx = window.__slimeSfx || (window.__slimeSfx = new SlimeSFX());
         // 方向鍵長按：鍵盤 / 觸控分開設定（DAS＝開始連續移動前的等待，ARR＝之後每格間隔，毫秒）
@@ -260,17 +266,18 @@ class SlimeTetris {
             const pickCell = this.specialRng();
             // ☯ 雙生：堆疊過半、場上沒有黑洞、目前沒有雙生連發時，每顆方塊有獨立 TWIN_RATE 機率出現
             const twinOk = this.stackHeight() > this.ROWS / 2 && !this.kindOnField('blackhole') && !this.kindOnField('twin') && this.forcedO === 0 && !twinO;
-            const tr = twinOk ? this.TWIN_RATE : 0;
+            const tr = twinOk && !this.bug ? this.TWIN_RATE : 0;
             let kind = '';
             if (roll < tr) kind = 'twin';
             else if (roll < tr + this.SPECIAL_RATE) {
                 // 其他特殊史萊姆（不含雙生）；亂數消耗次數固定，PK 雙方順序不會錯開
-                const pool = this.SPECIAL_KINDS.filter(([n]) => n !== 'twin');
+                const pool = this.bug ? [['queen', 1]] : this.SPECIAL_KINDS.filter(([n]) => n !== 'twin');
                 const tot = pool.reduce((a, [, w]) => a + w, 0);
                 let acc = 0; kind = 'star';
                 for (const [name, w] of pool) { acc += w / tot; if (pickKind < acc) { kind = name; break; } }
                 if (kind === 'blackhole' && this.kindOnField('twin')) kind = '';
             }
+            if (this.bug && this.safeLeft > 0) kind = '';   // 🛡 安全期：不出蟻后（亂數照常消耗）
             if (kind) {
                 const cells = [];
                 m.forEach((row, r) => row.forEach((v, c) => { if (v) cells.push([r, c]); }));
@@ -516,6 +523,12 @@ class SlimeTetris {
             this.nextCtx.save();
             this.nextCtx.fillStyle = '#f4f4f4'; this.nextCtx.font = 'bold 13px sans-serif'; this.nextCtx.textAlign = 'right';
             this.nextCtx.fillText(`☯×${remain}`, this.NW - 3, 13);
+            this.nextCtx.restore();
+        }
+        if (this.safeLeft > 0) {
+            this.nextCtx.save();
+            this.nextCtx.fillStyle = '#7bed9f'; this.nextCtx.font = 'bold 12px sans-serif'; this.nextCtx.textAlign = 'left';
+            this.nextCtx.fillText(`🛡${this.safeLeft}`, 2, 13);
             this.nextCtx.restore();
         }
     }
@@ -892,6 +905,11 @@ class SlimeTetris {
     // 👑 蟻后回合處理（每鎖定一顆方塊呼叫一次，在消行之後）
     colonyTick() {
         if (!this.special) return;
+        if (this.safeLeft > 0) {   // 🛡 安全期：蟲不繁殖、不長大
+            this.safeLeft--;
+            if (this.safeLeft === 0) { this.dangerAt = performance.now(); this.sfx.hatch(); }
+            return;
+        }
         this.colonyTicks++;
         let grew = 0, hatched = 0;
         // 幼蟲長大：格子編碼 "顏色|larva|回合數"，滿 LARVA_GROW_TURNS 就變成新蟻后 "顏色|queen|0"
@@ -923,6 +941,18 @@ class SlimeTetris {
             }
         }
         if (hatched || grew) this.sfx.hatch();
+    }
+
+    // 🛡 安全期開始：場上蟻后與幼蟲全部變回普通史萊姆，接下來約 SAFE_PIECES 顆方塊沒有蟲
+    startSafePeriod() {
+        this.safeLeft = this.SAFE_PIECES;
+        this.safeAt = performance.now();
+        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+            const k = SlimeTetris.cellKind(this.board[r][c]);
+            if (k === 'queen' || k === 'larva') this.board[r][c] = SlimeTetris.cellColor(this.board[r][c]);
+        }
+        if (this.nextPiece && this.nextPiece.k) this.nextPiece.k = this.nextPiece.k.map(row => row.map(k => (k === 'queen' ? '' : k)));
+        this.sfx.purify();
     }
 
     spawnAndCheck() {
@@ -970,7 +1000,12 @@ class SlimeTetris {
             const comboRate = 0.5 * (mods.queens ? this.QUEEN_COMBO_MUL : 1);   // 👑 消掉蟻后：combo 加成翻倍
             let addScore = base * (1 + this.combo * comboRate) * (mods.stars ? 2 : 1) + (mods.purified || 0) * 100 + (mods.queens || 0) * this.QUEEN_BONUS;
             if (mods.blackhole) addScore = (addScore + (mods.vacuumed || 0) * 10) * 0.8;
+            addScore = Math.round(addScore * this.SCORE_MUL);
             this.score += addScore;
+            if (this.bug && this.score >= this.nextSafeAt) {
+                while (this.score >= this.nextSafeAt) this.nextSafeAt += this.SAFE_EVERY;
+                this.startSafePeriod();
+            }
             this.lines += cleared;
             this.combo++;
 
@@ -1207,6 +1242,18 @@ class SlimeTetris {
         }
 
         // LEVEL UP 提示（約 0.9 秒）
+        // 🐜 蟲萊姆通啦：安全期開始／結束提示
+        [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43']].forEach(([at, txt, color]) => {
+            if (!at || now - at >= 1500 || this.gameOver) return;
+            const t = (now - at) / 1500;
+            this.ctx.save();
+            this.ctx.globalAlpha = 1 - t * t;
+            this.ctx.textAlign = 'center';
+            this.ctx.font = 'bold 15px sans-serif';
+            this.ctx.fillStyle = color; this.ctx.strokeStyle = '#1b1b22'; this.ctx.lineWidth = 4;
+            this.ctx.strokeText(txt, this.W / 2, this.H * 0.34); this.ctx.fillText(txt, this.W / 2, this.H * 0.34);
+            this.ctx.restore();
+        });
         if (this.levelUpAt && now - this.levelUpAt < 900 && !this.gameOver) {
             const t = (now - this.levelUpAt) / 900;
             this.ctx.save();

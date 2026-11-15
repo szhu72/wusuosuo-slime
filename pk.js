@@ -120,8 +120,9 @@
             <h2 class="pk-title">史萊姆方塊 <span>Q彈大冒險</span></h2>
             <div id="pk-me" class="pk-me"></div>
             <div class="pk-variant" id="pk-variant">
-              <button data-v="classic">🎮 經典模式</button>
-              <button data-v="special">✨ 特殊史萊姆</button>
+              <button data-v="classic">🎮 經典</button>
+              <button data-v="special">✨ 特殊</button>
+              <button data-v="bug">🐜 蟲萊姆通啦</button>
             </div>
             <p class="pk-hint pk-variant-hint" id="pk-variant-hint"></p>
             <button id="pk-single" class="ui-btn primary pk-big">🎮 單人遊戲</button>
@@ -143,7 +144,7 @@
             <p id="pk-status" class="pk-status"></p>
             <div class="pk-rank">
               <h3>🏆 排行榜 TOP 10</h3>
-              <div class="pk-rank-tabs" id="pk-rank-tabs"><button data-v="classic" class="on">經典</button><button data-v="special">特殊史萊姆</button></div>
+              <div class="pk-rank-tabs" id="pk-rank-tabs"><button data-v="classic" class="on">經典</button><button data-v="special">特殊史萊姆</button><button data-v="bug">蟲萊姆通啦</button></div>
               <div class="pk-rank-viewport"><ol id="pk-rank-list" class="pk-rank-list"><li class="pk-hint">載入中…</li></ol></div>
             </div>
           </div>
@@ -152,7 +153,8 @@
             <p class="pk-hint" id="pk-room-mode"></p>
             <div class="pk-variant pk-room-variant" id="pk-room-variant">
               <button data-v="classic">🎮 經典</button>
-              <button data-v="special">✨ 特殊史萊姆</button>
+              <button data-v="special">✨ 特殊</button>
+              <button data-v="bug">🐜 蟲萊姆通啦</button>
             </div>
             <div class="pk-hint" id="pk-room-rules"></div>
             <button id="pk-share" class="ui-btn primary">📨 邀請好友</button>
@@ -207,7 +209,8 @@
           <div><b>${esc(me.name || '尚未命名')}</b> <span class="pk-tag">#${esc(me.code)}</span>
             <button id="pk-rename" class="pk-link">✎ 改名</button></div>
           <div class="pk-hint">經典：最佳 ${me.best || 0} 分 · ${me.wins || 0} 勝 ${me.losses || 0} 敗${me.draws ? ` ${me.draws} 和` : ''}</div>
-          <div class="pk-hint">特殊：最佳 ${me.bestSp || 0} 分 · ${me.winsSp || 0} 勝 ${me.lossesSp || 0} 敗${me.drawsSp ? ` ${me.drawsSp} 和` : ''}</div>`;
+          <div class="pk-hint">特殊：最佳 ${me.bestSp || 0} 分 · ${me.winsSp || 0} 勝 ${me.lossesSp || 0} 敗${me.drawsSp ? ` ${me.drawsSp} 和` : ''}</div>
+          <div class="pk-hint">蟲萊姆：最佳 ${me.bestBug || 0} 分 · ${me.winsBug || 0} 勝 ${me.lossesBug || 0} 敗${me.drawsBug ? ` ${me.drawsBug} 和` : ''}</div>`;
         $('#pk-rename').onclick = () => askName(true);
     }
 
@@ -238,9 +241,13 @@
     }
 
     // 玩法：經典（classic）/ 特殊史萊姆（special）。兩種的成績、勝敗、排行榜完全分開統計
-    let variant = (() => { try { return localStorage.getItem('slime_variant') === 'special' ? 'special' : 'classic'; } catch { return 'classic'; } })();
-    const sfxKey = (special) => (special ? 'Sp' : '');          // 欄位後綴：best / bestSp、wins / winsSp…
-    const variantName = (special) => (special ? '特殊史萊姆' : '經典');
+    // 🐜 蟲萊姆通啦（bug）：只出現蟻后＋幼蟲，成績另外統計（欄位後綴 Bug）
+    const VARIANTS = ['classic', 'special', 'bug'];
+    let variant = (() => { try { const v = localStorage.getItem('slime_variant'); return VARIANTS.includes(v) ? v : 'classic'; } catch { return 'classic'; } })();
+    const sfxKey = (v) => (v === 'bug' ? 'Bug' : v === 'special' ? 'Sp' : '');   // 欄位後綴：best / bestSp / bestBug…
+    const variantName = (v) => (v === 'bug' ? '蟲萊姆通啦' : v === 'special' ? '特殊史萊姆' : '經典');
+    const roomVariant = (r) => (r.bug ? 'bug' : r.special ? 'special' : 'classic');
+    const variantFields = (v) => ({ special: v !== 'classic', bug: v === 'bug' });
     const SPECIAL_RULES = [
         ['⭐', '星星', '該次消除分數 ×2、PK 攻擊 +1'],
         ['💣', '炸彈', '連同正上方、正下方整行一起炸掉'],
@@ -252,6 +259,14 @@
         ['🛡', '硬殼垃圾', 'PK 專用，要消 2 次'],
     ];
     const rulesHtml = () => `<details class="pk-rules"><summary>✨ 特殊史萊姆規則（點開看）</summary><ul>${SPECIAL_RULES.map(([i, n, d]) => `<li><b>${i} ${n}</b>　${d}</li>`).join('')}</ul><p>成績與排行榜和經典模式分開計算。</p></details>`;
+    const BUG_RULES = [
+        ['👑', '蟻后', '約每 5 顆出現 1 隻；每落 1 顆就生 1 隻幼蟲（取代場上史萊姆，每隻最多 5 隻）'],
+        ['🐛', '幼蟲', '2 回合沒消掉就長成新蟻后'],
+        ['💰', '分數', '所有得分 ×1.5；消掉蟻后 +300、combo 加成 ×2'],
+        ['🛡', '安全期', '分數每突破 1 萬：場上的蟲全部變回普通史萊姆，約 10 顆方塊不出蟲，之後蟲蟲危機再來'],
+    ];
+    const bugRulesHtml = () => `<details class="pk-rules"><summary>🐜 蟲萊姆通啦規則（點開看）</summary><ul>${BUG_RULES.map(([i, n, d]) => `<li><b>${i} ${n}</b>　${d}</li>`).join('')}</ul><p>只會出現蟻后與幼蟲，成績與排行榜另外計算。</p></details>`;
+    const variantHtml = (v) => (v === 'bug' ? bugRulesHtml() : v === 'special' ? rulesHtml() : '🎮 經典模式：純粹比消除技術，沒有特殊史萊姆。');
     const SPECIAL_HELP = '⭐ 星星：該次消除分數 ×2、攻擊 +1　💣 炸彈：連同正上方、正下方整行一起炸掉（照一般消行計分）　💧 融化：落地往下滴補洞　🧟 殭屍：一般消除會讓自己冒出 2 行垃圾，但被炸彈或黑洞處理掉可淨化並加分　🕳 黑洞：消除時清空整個盤面，本次得分只拿 8 成　☯ 雙生（堆超過半場才出現）：消除後連續 5–8 個 2×2 方塊，是福是禍看手氣　🛡 硬殼垃圾（PK）：要消 2 次';
     let selMode = { mode: 'timed', duration: 180 };
     function modeText(m) { return m.mode === 'survival' ? '生存 PK：不限時間，先堆到頂的人輸，每 40 秒自動加速。' : `計時 PK：${m.duration / 60} 分鐘內消除行數多的人贏；中途有人堆到頂就直接判輸、提早結束。`; }
@@ -266,7 +281,7 @@
             if (!(await net.get(`rooms/${code}/host`))) break;
         }
         await net.set(`rooms/${code}`, {
-            host: me.uid, mode: selMode.mode, duration: selMode.duration, special: variant === 'special', status: 'waiting', createdAt: SERVER_TIME,
+            host: me.uid, mode: selMode.mode, duration: selMode.duration, ...variantFields(variant), status: 'waiting', createdAt: SERVER_TIME,
             players: { [me.uid]: { name: me.name, code: me.code, ready: false, online: true, joinedAt: SERVER_TIME } },
         });
         await enterRoom(code);
@@ -316,11 +331,11 @@
         $('#pk-room-code').textContent = roomCode;
         $('#pk-room-mode').textContent = modeText(r);
         const rr = $('#pk-room-rules');
-        const want = r.special ? 'special' : 'classic';
-        if (rr.dataset.v !== want) { rr.dataset.v = want; rr.innerHTML = r.special ? rulesHtml() : '🎮 經典模式：沒有特殊史萊姆。'; }
+        const want = roomVariant(r);
+        if (rr.dataset.v !== want) { rr.dataset.v = want; rr.innerHTML = variantHtml(want); }
         const canSwitch = r.host === me.uid && r.status !== 'playing';
         document.querySelectorAll('#pk-room-variant button').forEach((b) => {
-            b.classList.toggle('on', (b.dataset.v === 'special') === !!r.special);
+            b.classList.toggle('on', b.dataset.v === roomVariant(r));
             b.disabled = !canSwitch;
         });
         const ps = Object.entries(r.players || {}).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
@@ -376,7 +391,7 @@
     }
 
     function beginMatch(r) {
-        match = { seed: r.seed, startAt: r.startAt, mode: r.mode, duration: r.duration, special: !!r.special, matchId: r.matchId, processed: new Set(), resolved: false };
+        match = { seed: r.seed, startAt: r.startAt, mode: r.mode, duration: r.duration, special: !!r.special, variant: roomVariant(r), matchId: r.matchId, processed: new Set(), resolved: false };
         show('pk-lobby', false);
         show('pk-panel', true);
         document.body.classList.add('pk-mode');
@@ -420,6 +435,7 @@
         game = new SlimeTetris({
             seed: match.seed,
             special: !!match.special,
+            bug: match.variant === 'bug',
             pvp: true,
             minLevel: () => (match.mode === 'survival' ? 1 + Math.floor(Math.max(0, net.now() - match.startAt) / SURVIVAL_SPEEDUP_MS) : 1),
             onClear: (cleared, combo, extra = {}) => {
@@ -543,7 +559,7 @@
         const myScore = game ? Math.floor(game.score) : 0;
         const outcome = result.draw ? 'draw' : result.winner === me.uid ? 'win' : 'loss';
         // 戰績 + 個人最佳（只在超過舊紀錄時更新）
-        const sx = sfxKey(match.special);
+        const sx = sfxKey(match.variant);
         const bestKey = 'best' + sx;
         const isPB = myScore > (me[bestKey] || 0);
         const statKey = (outcome === 'win' ? 'wins' : outcome === 'loss' ? 'losses' : 'draws') + sx;
@@ -568,7 +584,7 @@
             <tr class="me"><td>${esc(me.name)}</td><td>${mine.lines || 0}</td><td>${mine.score || 0}</td></tr>
             <tr><td>${esc(theirs.name || '對手')}</td><td>${theirs.lines || 0}</td><td>${theirs.score || 0}</td></tr>
           </table>
-          ${isPB ? `<p class="pk-pb">🎉 新個人紀錄 ${myScore} 分！已更新「${variantName(match.special)}」排行榜</p>` : `<p class="pk-hint">${variantName(match.special)}模式個人最佳：${me[bestKey] || 0} 分</p>`}
+          ${isPB ? `<p class="pk-pb">🎉 新個人紀錄 ${myScore} 分！已更新「${variantName(match.variant)}」排行榜</p>` : `<p class="pk-hint">${variantName(match.variant)}模式個人最佳：${me[bestKey] || 0} 分</p>`}
           <button id="pk-again" class="ui-btn primary pk-big">↻ 回房間再來一局</button>
           <button id="pk-tolobby" class="ui-btn pk-ghost">離開房間</button>`;
         show('pk-result', true);
@@ -592,10 +608,11 @@
     function startSingle() {
         show('pk-lobby', false);
         show('pk-menu-btn', true);
-        const special = variant === 'special';
-        const bestKey = 'best' + sfxKey(special);
+        const { special, bug } = variantFields(variant);
+        const v = variant;
+        const bestKey = 'best' + sfxKey(v);
         game = new SlimeTetris(net && me ? {
-            special,
+            special, bug,
             onGameOver: async (g) => {
                 const score = Math.floor(g.score);
                 document.getElementById('final-score-text').innerText = '得分: ' + score;
@@ -606,11 +623,11 @@
                 if (score > (me[bestKey] || 0)) {
                     me[bestKey] = score;
                     await net.update(`players/${me.uid}`, { [bestKey]: score, name: me.name, code: me.code, updatedAt: SERVER_TIME });
-                    note.textContent = `🎉 新個人紀錄！已更新「${variantName(special)}」排行榜`;
-                } else note.textContent = `${variantName(special)}模式個人最佳：${me[bestKey] || 0} 分`;
+                    note.textContent = `🎉 新個人紀錄！已更新「${variantName(v)}」排行榜`;
+                } else note.textContent = `${variantName(v)}模式個人最佳：${me[bestKey] || 0} 分`;
                 document.getElementById('game-overlay').classList.remove('hidden');
             },
-        } : { special });
+        } : { special, bug });
         window.__game = game;
     }
 
@@ -622,7 +639,7 @@
         const ol = $('#pk-rank-list');
         if (!ol) return;
         document.querySelectorAll('#pk-rank-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.v === rankVariant));
-        const field = 'best' + sfxKey(rankVariant === 'special');
+        const field = 'best' + sfxKey(rankVariant);
         let list = [];
         try { list = net ? await net.topBest(10, field) : []; } catch (e) { console.warn(e); }
         if (!list.length) { ol.innerHTML = `<li class="pk-hint">${net ? '還沒有紀錄，來當第一名吧！' : 'PK 連線啟用後顯示'}</li>`; ol.classList.remove('pk-rolling'); return; }
@@ -651,10 +668,8 @@
         $('#pk-single').onclick = startSingle;
         const renderVariant = () => {
             document.querySelectorAll('#pk-variant button').forEach((b) => b.classList.toggle('on', b.dataset.v === variant));
-            $('#pk-variant-hint').innerHTML = variant === 'special'
-                ? rulesHtml()
-                : '🎮 經典模式：純粹比消除技術，沒有特殊史萊姆。';
-            $('#pk-single').textContent = variant === 'special' ? '✨ 單人遊戲（特殊史萊姆）' : '🎮 單人遊戲（經典）';
+            $('#pk-variant-hint').innerHTML = variantHtml(variant);
+            $('#pk-single').textContent = { classic: '🎮 單人遊戲（經典）', special: '✨ 單人遊戲（特殊史萊姆）', bug: '🐜 單人遊戲（蟲萊姆通啦）' }[variant];
         };
         document.querySelectorAll('#pk-variant button').forEach((b) => b.onclick = () => {
             variant = b.dataset.v;
@@ -666,7 +681,7 @@
         document.querySelectorAll('#pk-rank-tabs button').forEach((b) => b.onclick = () => { rankVariant = b.dataset.v; loadRanking(); });
         document.querySelectorAll('#pk-room-variant button').forEach((b) => b.onclick = () => {
             if (!room || room.host !== me.uid || room.status === 'playing') return;
-            net.update(`rooms/${roomCode}`, { special: b.dataset.v === 'special' });
+            net.update(`rooms/${roomCode}`, variantFields(b.dataset.v));
         });
         document.querySelectorAll('#pk-modes button').forEach((b) => b.onclick = () => {
             document.querySelectorAll('#pk-modes button').forEach((x) => x.classList.remove('on'));
@@ -694,7 +709,7 @@
         }
         const saved = (await net.get(`players/${net.uid}`)) || {};
         me = { uid: net.uid, code: shortCode(net.uid), name: saved.name || '' };
-        ['best', 'wins', 'losses', 'draws'].forEach((k) => { me[k] = saved[k] || 0; me[k + 'Sp'] = saved[k + 'Sp'] || 0; });
+        ['best', 'wins', 'losses', 'draws'].forEach((k) => { me[k] = saved[k] || 0; me[k + 'Sp'] = saved[k + 'Sp'] || 0; me[k + 'Bug'] = saved[k + 'Bug'] || 0; });
         renderMe();
         status('');
         const namePromise = askName(false);

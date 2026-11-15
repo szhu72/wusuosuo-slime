@@ -118,3 +118,8 @@ body.pk-mode .sidebar { gap: 6px; }
   .pk-big { padding: 10px; font-size: 14px; }
   .pk-me { padding: 6px 8px; }
 }
+
+/* ===== 🐜 蟲萊姆通啦：玩法按鈕改三欄、蟲模式用橘色 ===== */
+.pk-variant { grid-template-columns: 1fr 1fr 1.4fr; }
+.pk-variant button { white-space: nowrap; }
+.pk-variant button[data-v="bug"].on { background: #ff9f43; border-color: #ff9f43; }
