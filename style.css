@@ -307,3 +307,8 @@ body { min-height: 100vh; min-height: 100dvh; align-items: stretch; }
 /* 盤面＋按鈕當成一組，放在標題下方剩餘空間的中間：多出的高度平分在盤面上方與按鈕下方，按鈕不會被擠到最底 */
 #app-container > .main-layout { margin-top: auto; }
 #app-container > .touch-controls { margin-bottom: auto; }
+
+/* ===== 按鍵間距：上下兩排、左右鍵之間拉開，減少誤觸與「按了沒反應」的感覺 ===== */
+.touch-controls { gap: clamp(10px, 2dvh, 18px); }
+.control-row { gap: 10px; }
+.touch-btn { height: clamp(46px, 7.5dvh, 64px); }
