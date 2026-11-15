@@ -303,4 +303,7 @@ body { min-height: 100vh; min-height: 100dvh; align-items: stretch; }
 
 /* ===== 遊戲畫面高度修正：用 JS 量到的實際可見高度（--app-h），按鈕固定在底部不被切掉 ===== */
 #app-container { height: var(--app-h, 100dvh); }
-.touch-controls { margin-top: auto; }
+.touch-controls { margin-top: 10px; }
+/* 盤面＋按鈕當成一組，放在標題下方剩餘空間的中間：多出的高度平分在盤面上方與按鈕下方，按鈕不會被擠到最底 */
+#app-container > .main-layout { margin-top: auto; }
+#app-container > .touch-controls { margin-bottom: auto; }
