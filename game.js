@@ -1332,13 +1332,20 @@ window.addEventListener('DOMContentLoaded', () => {
         const wrap = document.getElementById('canvas-container');
         const side = document.querySelector('.sidebar');
         if (!main || !wrap) return;
+        // 用瀏覽器實際可見高度（部分 Android 瀏覽器的 100dvh 會比可見範圍高，底部按鈕被切掉）
+        const vh = Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight);
+        document.documentElement.style.setProperty('--app-h', vh + 'px');
+        main.style.flex = ''; main.style.height = '';   // 先恢復彈性高度再量測
         const border = 8; // 外框 4px x 2
         const maxW = main.clientWidth * 0.70;
         const maxH = main.clientHeight;
         const inner = Math.max(120, Math.floor(Math.min(maxW - border, (maxH - border) / 2)));
+        const boardH = inner * 2 + border;
         wrap.style.width = (inner + border) + 'px';
-        wrap.style.height = (inner * 2 + border) + 'px';
-        if (side) side.style.height = (inner * 2 + border) + 'px';
+        wrap.style.height = boardH + 'px';
+        if (side) side.style.height = boardH + 'px';
+        // 盤面被寬度限制時，多出的高度不要變成盤面上方的空白：盤面貼齊標題，按鈕留在底部
+        if (maxH - boardH > 8) { main.style.flex = '0 0 auto'; main.style.height = boardH + 'px'; }
     }
     window.addEventListener('DOMContentLoaded', fitLayout);
     window.addEventListener('resize', fitLayout);

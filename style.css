@@ -300,3 +300,7 @@ body { min-height: 100vh; min-height: 100dvh; align-items: stretch; }
 .panel { padding: 6px 8px; }
 .stat-item { font-size: 10px; }
 .stat-item .val { font-size: 12px; }
+
+/* ===== 遊戲畫面高度修正：用 JS 量到的實際可見高度（--app-h），按鈕固定在底部不被切掉 ===== */
+#app-container { height: var(--app-h, 100dvh); }
+.touch-controls { margin-top: auto; }
