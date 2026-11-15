@@ -569,11 +569,16 @@
             me[statKey] = (me[statKey] || 0) + 1;
             const upd = { [statKey]: me[statKey], name: me.name, code: me.code, updatedAt: SERVER_TIME };
             if (isPB) { me[bestKey] = myScore; upd[bestKey] = myScore; }
-            await net.update(`players/${me.uid}`, upd);
+            // 背景存戰績：失敗或很慢都不會卡住結果畫面
+            net.update(`players/${me.uid}`, upd).catch((e) => {
+                console.warn(e);
+                const pb = document.getElementById('pk-pb-line');
+                if (pb) pb.textContent = `戰績儲存失敗（${e.code || e.message || e}）`;
+            });
         }
 
         const [oppUid] = opponentEntry();
-        const mine = (result.scores || {})[me.uid] || { score: myScore, lines: game ? game.lines : 0 };
+        const mine = { score: myScore, lines: game ? game.lines : (((result.scores || {})[me.uid] || {}).lines || 0) };   // 自己的分數以本機為準
         const theirs = (result.scores || {})[oppUid] || {};
         const reason = { topout: outcome === 'win' ? '對手堆到頂了！' : '你堆到頂了…', time: '時間到！', disconnect: outcome === 'win' ? '對手斷線超過 10 秒' : '你斷線超過 10 秒' }[result.reason] || '';
         $('#pk-result-card').innerHTML = `
@@ -584,7 +589,7 @@
             <tr class="me"><td>${esc(me.name)}</td><td>${mine.lines || 0}</td><td>${mine.score || 0}</td></tr>
             <tr><td>${esc(theirs.name || '對手')}</td><td>${theirs.lines || 0}</td><td>${theirs.score || 0}</td></tr>
           </table>
-          ${isPB ? `<p class="pk-pb">🎉 新個人紀錄 ${myScore} 分！已更新「${variantName(match.variant)}」排行榜</p>` : `<p class="pk-hint">${variantName(match.variant)}模式個人最佳：${me[bestKey] || 0} 分</p>`}
+          ${isPB ? `<p class="pk-pb" id="pk-pb-line">🎉 新個人紀錄 ${myScore} 分！已更新「${variantName(match.variant)}」排行榜</p>` : `<p class="pk-hint" id="pk-pb-line">${variantName(match.variant)}模式個人最佳：${me[bestKey] || 0} 分</p>`}
           <button id="pk-again" class="ui-btn primary pk-big">↻ 回房間再來一局</button>
           <button id="pk-tolobby" class="ui-btn pk-ghost">離開房間</button>`;
         show('pk-result', true);
@@ -620,12 +625,26 @@
                 if (ig) ig.classList.add('hidden');
                 let note = document.getElementById('pk-single-pb');
                 if (!note) { note = document.createElement('p'); note.id = 'pk-single-pb'; note.className = 'pk-pb'; document.getElementById('final-score-text').after(note); }
-                if (score > (me[bestKey] || 0)) {
-                    me[bestKey] = score;
-                    await net.update(`players/${me.uid}`, { [bestKey]: score, name: me.name, code: me.code, updatedAt: SERVER_TIME });
-                    note.textContent = `🎉 新個人紀錄！已更新「${variantName(v)}」排行榜`;
-                } else note.textContent = `${variantName(v)}模式個人最佳：${me[bestKey] || 0} 分`;
+                if (!document.getElementById('pk-single-lobby')) {
+                    const back = document.createElement('button');
+                    back.id = 'pk-single-lobby'; back.className = 'ui-btn pk-ghost'; back.textContent = '← 返回大廳';
+                    back.onclick = () => { location.href = location.pathname + (qs.get('net') ? '?net=' + qs.get('net') : ''); };
+                    document.getElementById('btn-restart').after(back);
+                }
+                // 先顯示計分板，再在背景存分數：存檔失敗或網路慢都不會卡住計分板
                 document.getElementById('game-overlay').classList.remove('hidden');
+                const isPB = score > (me[bestKey] || 0);
+                note.textContent = isPB ? `🎉 新個人紀錄 ${score} 分！儲存中…` : `${variantName(v)}模式個人最佳：${me[bestKey] || 0} 分`;
+                if (isPB) {
+                    me[bestKey] = score;
+                    try {
+                        await net.update(`players/${me.uid}`, { [bestKey]: score, name: me.name, code: me.code, updatedAt: SERVER_TIME });
+                        note.textContent = `🎉 新個人紀錄 ${score} 分！已更新「${variantName(v)}」排行榜`;
+                    } catch (e) {
+                        console.warn(e);
+                        note.textContent = `🎉 新個人紀錄 ${score} 分，但排行榜儲存失敗（${e.code || e.message || e}）`;
+                    }
+                }
             },
         } : { special, bug });
         window.__game = game;
