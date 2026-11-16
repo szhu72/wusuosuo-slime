@@ -212,6 +212,10 @@ class SlimeTetris {
         this.level = 1;
         this.lines = 0;
         this.combo = 0;
+        // ⏱ 限時連擊：消行後 COMBO_WINDOW_MS 內再消行就接上（中間放幾顆不消行的方塊都沒關係），時間到才歸零
+        //   用遊戲時間（playMs）計算：暫停、消除動畫時不倒數；手機和電腦玩家的時間標準一樣
+        this.COMBO_WINDOW_MS = 5000; this.comboUntil = 0; this.lastLockCleared = false;
+        this.comboFxAt = 0; this.comboFxN = 0;
         this.gameOver = false;
         this.paused = false;
         
@@ -672,6 +676,7 @@ class SlimeTetris {
         this.updateHeldInput(time);
         this.dropCounter += deltaTime;
         this.playMs += Math.min(deltaTime, 100);
+        if (this.combo > 0 && this.playMs > this.comboUntil) { this.combo = 0; this.updateUI(); }   // ⏱ 連擊時間到
 
         const effLevel = this.currentLevel();
         if (effLevel > this.shownLevel) {          // 升級提示：音效 + 畫面閃字
@@ -1086,7 +1091,7 @@ class SlimeTetris {
         this.colonyTicks++;
         let toppedOut = false;
         if (this.bug) {
-            this.idlePieces = this.combo > 0 ? 0 : this.idlePieces + 1;   // combo>0 代表這一顆有消行
+            this.idlePieces = this.lastLockCleared ? 0 : this.idlePieces + 1;   // 這一顆有消行就重新計算
             // 🐜 蟲潮來襲：第一次 40 秒，之後每波間隔少 5 秒（最短 20 秒）；底部冒出 1 行帶幼蟲的蟲穴
             if (this.playMs >= this.nextWaveAt) {
                 this.waveCount++;
@@ -1265,12 +1270,15 @@ class SlimeTetris {
             }
             this.lines += cleared;
             this.combo++;
+            this.comboUntil = this.playMs + this.COMBO_WINDOW_MS;
+            this.lastLockCleared = true;
+            if (this.combo >= 2) { this.comboFxAt = performance.now(); this.comboFxN = this.combo; }
 
             // 難度遞增：每消除 10 行升 1 Level (最高 10 階)
             this.level = this.currentLevel();
             if (this.opts.onClear) this.opts.onClear(cleared, this.combo, { stars: mods.stars || 0 });
         } else {
-            this.combo = 0;
+            this.lastLockCleared = false;   // ⏱ 限時連擊：沒消行不會立刻斷，等時間條跑完才歸零
         }
 
         this.updateUI();
@@ -1510,6 +1518,40 @@ class SlimeTetris {
         }
 
         // LEVEL UP 提示（約 0.9 秒）
+        // ⏱ 連擊時間條：盤面最上方，剩越少越紅，最後 1.5 秒閃爍
+        if (this.combo > 0 && !this.gameOver) {
+            const left = Math.max(0, this.comboUntil - this.playMs), ratio = left / this.COMBO_WINDOW_MS;
+            const col = ratio > 0.5 ? '#4ecca3' : ratio > 0.25 ? '#feca57' : '#ff6b6b';
+            const blink = left < 1500 && Math.floor(now / 120) % 2 === 0;
+            this.ctx.save();
+            this.ctx.fillStyle = 'rgba(0,0,0,.45)'; this.ctx.fillRect(0, 0, this.W, 16);
+            this.ctx.globalAlpha = blink ? 0.45 : 1;
+            this.ctx.fillStyle = col; this.ctx.fillRect(0, 0, this.W * ratio, 16);
+            this.ctx.globalAlpha = 1;
+            this.ctx.font = 'bold 11px sans-serif'; this.ctx.textAlign = 'left'; this.ctx.fillStyle = '#ffffff';
+            this.ctx.strokeStyle = 'rgba(0,0,0,.6)'; this.ctx.lineWidth = 3;
+            const label = `COMBO ×${this.combo}　${(left / 1000).toFixed(1)}s`;
+            this.ctx.strokeText(label, 5, 12); this.ctx.fillText(label, 5, 12);
+            this.ctx.restore();
+        }
+        // 🔥 連擊文字特效：彈出放大、輕微搖晃後淡出，連擊越高顏色越熱
+        if (this.comboFxAt && now - this.comboFxAt < 1000 && !this.gameOver) {
+            const t = (now - this.comboFxAt) / 1000, n = this.comboFxN;
+            const pop = t < 0.15 ? 0.6 + t / 0.15 * 0.7 : t < 0.3 ? 1.3 - (t - 0.15) / 0.15 * 0.3 : 1;
+            const col = n >= 6 ? '#ff4757' : n >= 4 ? '#ff9f43' : '#feca57';
+            this.ctx.save();
+            this.ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+            this.ctx.translate(this.W / 2 + Math.sin(t * 40) * (1 - t) * 3, this.H * 0.5 - t * 18);
+            this.ctx.scale(pop, pop);
+            this.ctx.textAlign = 'center';
+            this.ctx.font = `900 ${n >= 4 ? 30 : 26}px sans-serif`;
+            this.ctx.lineWidth = 6; this.ctx.strokeStyle = '#1b1b22'; this.ctx.fillStyle = col;
+            this.ctx.strokeText(`${n} COMBO!`, 0, 0); this.ctx.fillText(`${n} COMBO!`, 0, 0);
+            this.ctx.font = 'bold 13px sans-serif'; this.ctx.lineWidth = 4; this.ctx.fillStyle = '#ffffff';
+            const sub = n >= 6 ? '停不下來！' : n >= 4 ? '超連擊！' : '連擊！';
+            this.ctx.strokeText(sub, 0, 20); this.ctx.fillText(sub, 0, 20);
+            this.ctx.restore();
+        }
         // 🐜 蟲萊姆通啦：安全期開始／結束提示
         [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43'], [this.waveAt, '🐜 蟲潮來襲！', '#a3cb38'], [this.furyAt, '👑 蟻后發怒！', '#ff6b6b'], [this.powderAt, `🧨 火藥分裂！${this.powderCount || 0} 顆炸彈`, '#ff9f43'], [this.flashBoostAt, `⚡ 閃光加成 ×${(this.flashBoost || 1).toFixed(1)}`, '#fff9c4'], [this.eggAt, `🐓 咕咕咕！${this.eggCount || 0} 顆荷包蛋`, '#feca57']].forEach(([at, txt, color]) => {
             if (!at || now - at >= 1500 || this.gameOver) return;
