@@ -92,6 +92,9 @@ class SlimeSFX {
     }
     emperor() { this.tone(196, 0.25, { type: 'square', vol: 0.06 }); this.tone(262, 0.25, { type: 'square', vol: 0.06, delay: 0.12 }); this.tone(392, 0.4, { type: 'triangle', vol: 0.09, delay: 0.24 }); }
     rooster() { this.tone(659, 0.08, { type: 'square', vol: 0.06 }); this.tone(784, 0.08, { type: 'square', vol: 0.06, delay: 0.09 }); this.tone(988, 0.35, { type: 'square', vol: 0.07, slide: 0.7, delay: 0.18 }); }
+    buddha() { [523.25, 659.25, 783.99].forEach((f, i) => this.tone(f, 0.9, { type: 'sine', vol: 0.08, delay: i * 0.05 })); }
+    angel() { [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.18, { type: 'triangle', vol: 0.07, delay: i * 0.07 })); }
+    satan() { this.tone(220, 0.5, { type: 'sawtooth', vol: 0.07, slide: 0.5 }); this.tone(110, 0.6, { type: 'square', vol: 0.05, delay: 0.1 }); }
     hatch() { this.tone(880, 0.06, { type: 'triangle', vol: 0.07 }); this.tone(1175, 0.08, { type: 'triangle', vol: 0.06, delay: 0.06 }); }
     twin() { this.tone(523.25, 0.18, { type: 'triangle', vol: 0.1 }); this.tone(493.9, 0.18, { type: 'square', vol: 0.05, delay: 0.09 }); this.tone(523.25, 0.25, { type: 'triangle', vol: 0.1, delay: 0.18 }); }
     land() { this.tone(180, 0.07, { type: 'sine', vol: 0.09, slide: 0.6 }); }
@@ -144,7 +147,7 @@ class SlimeTetris {
         this.specialRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x51ED5EED) : Math.random;
         this.SPECIAL_RATE = 1 / 9;
         this.TWIN_RATE = 0.12;   // 堆疊過半後，每顆方塊 12% 機率是雙生
-        this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09], ['queen', 0.12], ['flash', 0.14], ['powder', 0.08], ['emperor', 0.07], ['rooster', 0.07]];
+        this.SPECIAL_KINDS = [['star', 0.25], ['bomb', 0.21], ['melt', 0.16], ['zombie', 0.20], ['blackhole', 0.09], ['twin', 0.09], ['queen', 0.12], ['flash', 0.14], ['powder', 0.08], ['emperor', 0.07], ['rooster', 0.07], ['buddha', 0.05], ['angel', 0.06], ['satan', 0.06]];
         this.forcedO = 0;              // ☯ 雙生：接下來還剩幾個 2×2 方塊
         this.twinRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x7A1A7A1A) : Math.random;
         this.twinAt = 0; this.twinCount = 0;
@@ -153,6 +156,14 @@ class SlimeTetris {
         // 🧨 火藥：分裂炸彈的位置用自己的亂數（PK 雙方不會錯開）
         this.powderRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0x9A0DE211) : Math.random;
         this.emperorId = 0;
+        // 💥 爆蛋：變蛋時的突變、自爆都用自己的亂數（PK 雙方不會錯開）
+        this.eggRng = typeof opts.seed === 'number' ? mulberry32(opts.seed ^ 0xE66B00B5) : Math.random;
+        this.BOOMEGG_RATE = 0.15; this.BOOMEGG_FUSE = 0.2;
+        // 🙏 佛陀：落地後 10 秒內自動卸除底層 3 行；結束後 5 秒「還願」消除不計分
+        this.BUDDHA_MS = 10000; this.VOW_MS = 5000; this.buddhaLeft = 0; this.buddhaNext = 0; this.buddhaEnd = 0; this.vowUntil = 0;
+        // 😇 天使：3 秒無敵，落下的方塊直接消掉它佔的行（只拿基本分、不觸發其他史萊姆能力）
+        // 😈 撒旦：3 秒詛咒，滿行被封印不消、速度 +3 級；詛咒結束封印的行一次爆掉，得分 ×2
+        this.ANGEL_MS = 3000; this.SATAN_MS = 3000; this.angelUntil = 0; this.satanUntil = 0; this.satanPending = false;
         this.colonyTicks = 0;
         this.QUEEN_SPAWN_EVERY = 2; this.QUEEN_MAX_LARVAE = 5; this.LARVA_GROW_TURNS = 3;
         this.QUEEN_BONUS = 300; this.QUEEN_COMBO_MUL = 2;
@@ -348,6 +359,10 @@ class SlimeTetris {
         if (kind === 'emperor') color = '#f6b93b';     // 皇帝：金色
         if (kind === 'rooster') color = '#f5f6fa';     // 香雞：白色公雞
         if (kind === 'egg') color = '#fffef5';         // 荷包蛋：蛋白
+        if (kind === 'boomegg') color = '#fffef5';     // 爆蛋：蛋白
+        if (kind === 'buddha') color = '#f6c453';      // 佛陀：金身
+        if (kind === 'angel') color = '#ffffff';       // 天使：純白
+        if (kind === 'satan') color = '#b0263a';       // 撒旦：暗紅
         if (kind === 'twin') color = '#f4f4f4';        // 雙生：黑白各半
         this.drawSlimeBody(ctx, x, y, color, size, fx);
         const cracked = kind === 'larva' && String(cell).split('|')[3] === '1';   // 裂開的幼蟲：不戴奶嘴、多一道裂痕
@@ -509,6 +524,39 @@ class SlimeTetris {
             ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.arc(px + s * 0.42, py + s * 0.44, s * 0.07, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#1e272e'; [0.42, 0.58].forEach((dx) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * 0.52, s * 0.045, 0, Math.PI * 2); ctx.fill(); });
             ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.03); ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.6, s * 0.06, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+        } else if (kind === 'boomegg') {
+            // 爆蛋：紅色蛋黃＋引線火花＋生氣的眼睛
+            ctx.fillStyle = '#fffef5'; ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.5, s * 0.4, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ff4757'; ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.55, s * 0.26, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.05);
+            ctx.beginPath(); ctx.moveTo(px + s * 0.36, py + s * 0.47); ctx.lineTo(px + s * 0.46, py + s * 0.52); ctx.moveTo(px + s * 0.64, py + s * 0.47); ctx.lineTo(px + s * 0.54, py + s * 0.52); ctx.stroke();
+            ctx.fillStyle = '#1e272e'; [0.42, 0.58].forEach((dx) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * 0.58, s * 0.04, 0, Math.PI * 2); ctx.fill(); });
+            ctx.beginPath(); ctx.moveTo(px + s * 0.6, py + s * 0.3); ctx.quadraticCurveTo(px + s * 0.72, py + s * 0.08, px + s * 0.86, py + s * 0.1); ctx.stroke();
+            ctx.fillStyle = '#ffe066'; ctx.beginPath(); ctx.arc(px + s * 0.87, py + s * 0.1, s * 0.08, 0, Math.PI * 2); ctx.fill();
+        } else if (kind === 'buddha') {
+            // 佛陀：光環＋頭頂肉髻＋閉目微笑＋白毫
+            ctx.strokeStyle = 'rgba(255,236,150,.95)'; ctx.lineWidth = Math.max(1.2, s * 0.06);
+            ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.5, s * 0.47, Math.PI * 1.08, Math.PI * 1.92); ctx.stroke();
+            ctx.fillStyle = '#d9a032'; ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.1, s * 0.12, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#f6c453'; [0.35, 0.65].forEach((dx) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * 0.45, s * 0.14, 0, Math.PI * 2); ctx.fill(); });
+            ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1, s * 0.045);
+            [0.35, 0.65].forEach((dx) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * 0.43, s * 0.08, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); });
+            ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.62, s * 0.08, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
+            ctx.fillStyle = '#e84118'; ctx.beginPath(); ctx.arc(px + s * 0.5, py + s * 0.3, s * 0.035, 0, Math.PI * 2); ctx.fill();
+        } else if (kind === 'angel') {
+            // 天使：金色光環＋兩側小翅膀＋腮紅
+            ctx.fillStyle = '#dfe6f0';
+            [[-1, 0.06], [1, 0.94]].forEach(([d, dx]) => { ctx.beginPath(); ctx.ellipse(px + s * dx, py + s * 0.55, s * 0.12, s * 0.22, d * 0.5, 0, Math.PI * 2); ctx.fill(); });
+            ctx.strokeStyle = '#feca57'; ctx.lineWidth = Math.max(1.2, s * 0.07);
+            ctx.beginPath(); ctx.ellipse(px + s * 0.5, py + s * 0.08, s * 0.24, s * 0.07, 0, 0, Math.PI * 2); ctx.stroke();
+            ctx.fillStyle = 'rgba(255,120,150,.55)'; [0.22, 0.78].forEach((dx) => { ctx.beginPath(); ctx.arc(px + s * dx, py + s * 0.62, s * 0.06, 0, Math.PI * 2); ctx.fill(); });
+        } else if (kind === 'satan') {
+            // 撒旦：一對尖角＋倒八字眉＋尖牙
+            ctx.fillStyle = '#2d1b1e';
+            [[0.22, -1], [0.78, 1]].forEach(([dx, d]) => { ctx.beginPath(); ctx.moveTo(px + s * (dx - 0.1), py + s * 0.22); ctx.quadraticCurveTo(px + s * (dx - d * 0.04), py - s * 0.02, px + s * (dx + d * 0.08), py - s * 0.08); ctx.lineTo(px + s * (dx + 0.1), py + s * 0.22); ctx.closePath(); ctx.fill(); });
+            ctx.strokeStyle = '#1e272e'; ctx.lineWidth = Math.max(1.2, s * 0.06);
+            ctx.beginPath(); ctx.moveTo(px + s * 0.22, py + s * 0.3); ctx.lineTo(px + s * 0.44, py + s * 0.38); ctx.moveTo(px + s * 0.78, py + s * 0.3); ctx.lineTo(px + s * 0.56, py + s * 0.38); ctx.stroke();
+            ctx.fillStyle = '#fff'; [[0.42, 1], [0.58, -1]].forEach(([dx]) => { ctx.beginPath(); ctx.moveTo(px + s * (dx - 0.04), py + s * 0.66); ctx.lineTo(px + s * (dx + 0.04), py + s * 0.66); ctx.lineTo(px + s * dx, py + s * 0.76); ctx.closePath(); ctx.fill(); });
         } else if (kind === 'hard') {
             ctx.fillStyle = '#9aa0b4';
             ctx.beginPath(); ctx.moveTo(px + s * 0.08, py + s * 0.42); ctx.quadraticCurveTo(px + s * 0.5, py - s * 0.12, px + s * 0.92, py + s * 0.42); ctx.closePath(); ctx.fill();
@@ -685,7 +733,8 @@ class SlimeTetris {
             this.sfx.levelUp();
             this.updateUI();
         }
-        const speed = this.SPEED_TABLE[effLevel - 1];
+        this.tickBlessings();
+        const speed = this.SPEED_TABLE[Math.min(this.MAX_LEVEL, effLevel + (this.satanUntil > this.playMs ? 3 : 0)) - 1];   // 😈 詛咒中速度 +3 級
 
         if (this.dropCounter > speed) {
             this.softDropStep();
@@ -909,6 +958,20 @@ class SlimeTetris {
             });
         });
 
+        // 🙏😇😈 這顆方塊帶著的神明／天使／惡魔：落地就啟動
+        const pk = (this.piece.k || []).flat();
+        if (pk.includes('buddha')) { this.buddhaLeft = 3; this.buddhaEnd = this.playMs + this.BUDDHA_MS; this.buddhaNext = this.playMs + this.BUDDHA_MS / 3; this.vowUntil = 0; this.buddhaAt = performance.now(); this.sfx.buddha(); }
+        if (pk.includes('angel')) { this.angelUntil = this.playMs + this.ANGEL_MS; this.angelAt = performance.now(); this.sfx.angel(); }
+        if (pk.includes('satan')) { this.satanUntil = this.playMs + this.SATAN_MS; this.satanPending = true; this.satanAt = performance.now(); this.sfx.satan(); }
+        // 😇 天使無敵中：方塊佔的每一行直接填滿，裡面的特殊史萊姆都變回一般（不帶入能力）
+        this.angelLock = false;
+        if (this.angelUntil > this.playMs && !(this.satanUntil > this.playMs)) {
+            const rows = new Set();
+            this.piece.m.forEach((row, y) => row.forEach((v) => { const by = this.piece.y + y; if (v && by >= 0 && by < this.ROWS) rows.add(by); }));
+            rows.forEach((r) => { this.board[r] = this.board[r].map((x) => (x ? SlimeTetris.cellColor(x) : '#fff6d5')); });
+            this.angelLock = rows.size > 0;
+        }
+
         this.triggerSquish();
 
         // 🐓 香雞：落地後，以牠所在的欄為中心、左右各一欄，整欄所有史萊姆都變成荷包蛋
@@ -916,9 +979,9 @@ class SlimeTetris {
             if (SlimeTetris.cellKind(this.board[r][c]) !== 'rooster') continue;
             let eggs = 0;
             for (let cc = Math.max(0, c - 1); cc <= Math.min(this.COLS - 1, c + 1); cc++) for (let rr = 0; rr < this.ROWS; rr++) {
-                if (this.board[rr][cc] && SlimeTetris.cellKind(this.board[rr][cc]) !== 'rooster') { this.board[rr][cc] = '#fffef5|egg'; eggs++; }
+                if (this.board[rr][cc] && SlimeTetris.cellKind(this.board[rr][cc]) !== 'rooster') { this.board[rr][cc] = this.eggRng() < this.BOOMEGG_RATE ? '#fffef5|boomegg' : '#fffef5|egg'; eggs++; }
             }
-            this.board[r][c] = '#fffef5|egg'; eggs++;
+            this.board[r][c] = this.eggRng() < this.BOOMEGG_RATE ? '#fffef5|boomegg' : '#fffef5|egg'; eggs++;
             this.eggAt = performance.now(); this.eggCount = eggs; this.sfx.rooster();
         }
 
@@ -979,10 +1042,10 @@ class SlimeTetris {
         // 有滿行 → 先播放消除動畫（史萊姆開心表情 + 閃爍消失），動畫結束才真正消除
         const full = [];
         for (let r = 0; r < this.ROWS; r++) if (this.board[r].every(cell => cell !== 0)) full.push(r);
-        if (full.length) {
+        if (full.length && !(this.satanUntil > this.playMs)) {   // 😈 詛咒中：滿行被封印
             // 結算消除行裡的特殊史萊姆：⭐ 計分 ×2、攻擊 +1；💣 炸掉上下格；🧟 自己加兩行垃圾
             // 🧟 殭屍若與 💣 炸彈在同一行、或被 🕳 黑洞吞掉 → 淨化（不懲罰，還加分）
-            const mods = { stars: 0, bombs: [], zombies: 0, purified: 0, blackhole: false, queens: 0 };
+            const mods = { stars: 0, bombs: [], zombies: 0, purified: 0, blackhole: false, queens: 0, boomEggs: [], angel: this.angelLock };
             full.forEach((r) => {
                 const kinds = this.board[r].map(SlimeTetris.cellKind);
                 const rowHasBomb = kinds.includes('bomb');
@@ -993,6 +1056,7 @@ class SlimeTetris {
                     else if (k === 'twin') mods.twin = true;
                     else if (k === 'queen') mods.queens++;
                     else if (k === 'powder') mods.powder = (mods.powder || 0) + 1;
+                    else if (k === 'boomegg') mods.boomEggs.push([r, c]);
                     else if (k === 'zombie') { if (rowHasBomb) mods.purified++; else mods.zombies++; }
                 });
             });
@@ -1005,6 +1069,7 @@ class SlimeTetris {
             }));
             full.push(...mods.blastRows);
             full.sort((a, b) => a - b);
+            mods.fullRows = full.slice();
             this.clearMods = mods;
             this.clearing = { rows: full, t0: performance.now(), mods };
             this.piece = null;
@@ -1037,6 +1102,16 @@ class SlimeTetris {
                 this.board[r].forEach((cell) => { const k = SlimeTetris.cellKind(cell); if (k === 'zombie') mods.purified++; else if (k === 'queen') mods.queens++; });
                 this.board[r] = this.board[r].map((cell) => cell || '#ff9f43');
             });
+        }
+        // 💥 爆蛋被消除：炸掉十字範圍（同一行左右會一起消；上下兩格另外炸掉），每格 5 分
+        if (mods && mods.boomEggs && mods.boomEggs.length) {
+            const fs = new Set(mods.fullRows || []);
+            let cells = 0;
+            mods.boomEggs.forEach(([r, c]) => {
+                cells += 1 + (c > 0 ? 1 : 0) + (c < this.COLS - 1 ? 1 : 0);
+                [r - 1, r + 1].forEach((rr) => { if (rr >= 0 && rr < this.ROWS && !fs.has(rr) && this.board[rr][c]) { this.board[rr][c] = 0; cells++; } });
+            });
+            mods.boomCells = cells; this.boomAt = performance.now(); this.boomPts = cells * 5; this.sfx.bomb();
         }
         // 🕳 黑洞：吞掉滿行以外的所有方塊（殭屍一起被淨化），本次得分只拿 8 成
         if (mods && mods.blackhole) {
@@ -1074,6 +1149,13 @@ class SlimeTetris {
     // 👑 蟻后回合處理（每鎖定一顆方塊呼叫一次，在消行之後）
     colonyTick() {
         if (!this.special) return false;
+        // 💥 爆蛋：每回合每顆有 20% 機率自爆，炸掉自己和上下左右（十字），每格 5 分
+        for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
+            if (SlimeTetris.cellKind(this.board[r][c]) !== 'boomegg' || this.eggRng() >= this.BOOMEGG_FUSE) continue;
+            let cells = 0;
+            [[r, c], [r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]].forEach(([rr, cc]) => { if (rr >= 0 && rr < this.ROWS && cc >= 0 && cc < this.COLS && this.board[rr][cc]) { this.board[rr][cc] = 0; cells++; } });
+            this.score += cells * 5; this.boomAt = performance.now(); this.boomPts = cells * 5; this.sfx.bomb(); this.updateUI();
+        }
         // ⚡ 閃光落地後每回合 +1，滿 2 回合就蓄能完成
         for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) {
             const x = this.board[r][c];
@@ -1177,6 +1259,42 @@ class SlimeTetris {
         return toppedOut;
     }
 
+    // 🙏 佛陀、😈 撒旦的計時（遊戲時間；暫停、消除動畫時不走）
+    tickBlessings() {
+        if (!this.special) return;
+        if (this.buddhaLeft > 0 && this.playMs >= this.buddhaNext) {
+            this.buddhaLeft--; this.buddhaNext += this.BUDDHA_MS / 3;
+            this.buddhaRemoveBottom();
+            if (this.buddhaLeft === 0) { this.vowUntil = this.playMs + this.VOW_MS; this.vowAt = performance.now(); }
+        }
+        if (this.satanPending && this.playMs >= this.satanUntil) { this.satanPending = false; this.releaseSatan(); }
+    }
+    // 🙏 卸除最底下一行有方塊的行：沒滿也算一行，照一般消行計分（含連擊）
+    buddhaRemoveBottom() {
+        let r = this.ROWS - 1;
+        while (r >= 0 && !this.board[r].some(x => x)) r--;
+        if (r < 0) return;
+        this.spawnParticles([r]);
+        this.board[r] = this.board[r].map((x) => x || '#ffe9a8');
+        this.clearMods = { buddha: true }; this.clearLines(); this.clearMods = null;
+        this.fixPieceOverlap(); this.sfx.clear(1, this.combo);
+    }
+    // 😈 詛咒結束：被封印的滿行一次消掉，得分 ×2
+    releaseSatan() {
+        const rows = [];
+        for (let r = 0; r < this.ROWS; r++) if (this.board[r].every(x => x !== 0)) rows.push(r);
+        this.satanReleaseAt = performance.now();
+        if (!rows.length) return;
+        this.spawnParticles(rows);
+        this.clearMods = { satan: true }; this.clearLines(); this.clearMods = null;
+        this.fixPieceOverlap(); this.sfx.bomb();
+    }
+    fixPieceOverlap() {
+        if (!this.piece) return;
+        let n = 0;
+        while (n++ < 6 && this.collide(this.piece.x, this.piece.y, this.piece.m)) this.piece.y--;
+    }
+
     // 🧨 火藥分裂：挑不重複的行，各把一格一般史萊姆變成炸彈
     scatterBombs() {
         const rows = [];
@@ -1232,6 +1350,7 @@ class SlimeTetris {
     }
 
     clearLines() {
+        if (this.satanUntil > this.playMs) { this.lastLockCleared = false; this.updateUI(); return 0; }   // 😈 詛咒中：滿行被封印
         let cleared = 0;
         // ⚡ 先數場上已蓄能的閃光（包含這次會被消掉的那幾隻）
         const isCharged = (x) => SlimeTetris.cellKind(x) === 'flash' && (parseInt(String(x).split('|')[2], 10) || 0) >= 2;
@@ -1262,7 +1381,11 @@ class SlimeTetris {
             for (let r = 0; r < this.ROWS; r++) for (let c = 0; c < this.COLS; c++) if (isCharged(this.board[r][c])) this.board[r][c] = SlimeTetris.cellColor(this.board[r][c]);
             if (charged) { addScore *= 1 + 0.5 * charged; this.flashBoostAt = performance.now(); this.flashBoost = 1 + 0.5 * charged; }
             addScore = Math.round(addScore * this.SCORE_MUL * this.levelScoreMul() * (this.bug ? 1 + this.BOUNTY_PER_QUEEN * this.bugQueens : 1));   // 👑 懸賞：場上每隻蟻后 +0.5 倍
+            if (mods.angel) addScore = base;           // 😇 天使：只拿基本分，沒有任何加成
+            if (mods.satan) addScore *= 2;            // 😈 封印解除：得分 ×2
             addScore += eggs * 5;   // 🍳 每顆荷包蛋 +5 分（照一般消行才拿得到）
+            addScore += (mods.boomCells || 0) * 5;   // 💥 爆蛋炸掉的格子，每格 5 分
+            if (this.vowUntil > this.playMs) { addScore = 0; this.vowZeroAt = performance.now(); }   // 🙏 還願中：消除不計分
             this.score += addScore;
             if (this.bug && this.score >= this.nextSafeAt) {
                 while (this.score >= this.nextSafeAt) this.nextSafeAt += this.SAFE_EVERY;
@@ -1518,6 +1641,17 @@ class SlimeTetris {
         }
 
         // LEVEL UP 提示（約 0.9 秒）
+        // 🙏😇😈 狀態提示：剩幾秒
+        if (this.special && !this.gameOver) {
+            const tags = [];
+            if (this.buddhaLeft > 0) tags.push([`🙏 佛陀 ${Math.max(0, (this.buddhaEnd - this.playMs) / 1000).toFixed(1)}s`, '#f6c453']);
+            if (this.vowUntil > this.playMs) tags.push([`🙏 還願（不計分）${((this.vowUntil - this.playMs) / 1000).toFixed(1)}s`, '#d1ccc0']);
+            if (this.angelUntil > this.playMs) tags.push([`😇 無敵 ${((this.angelUntil - this.playMs) / 1000).toFixed(1)}s`, '#ffffff']);
+            if (this.satanUntil > this.playMs) tags.push([`😈 詛咒 ${((this.satanUntil - this.playMs) / 1000).toFixed(1)}s`, '#ff6b81']);
+            this.ctx.save(); this.ctx.font = 'bold 11px sans-serif'; this.ctx.textAlign = 'right'; this.ctx.lineWidth = 3; this.ctx.strokeStyle = 'rgba(0,0,0,.7)';
+            tags.forEach(([t, col], i) => { this.ctx.fillStyle = col; this.ctx.strokeText(t, this.W - 4, 30 + i * 14); this.ctx.fillText(t, this.W - 4, 30 + i * 14); });
+            this.ctx.restore();
+        }
         // ⏱ 連擊時間條：盤面最上方，剩越少越紅，最後 1.5 秒閃爍
         if (this.combo > 0 && !this.gameOver) {
             const left = Math.max(0, this.comboUntil - this.playMs), ratio = left / this.COMBO_WINDOW_MS;
@@ -1553,7 +1687,7 @@ class SlimeTetris {
             this.ctx.restore();
         }
         // 🐜 蟲萊姆通啦：安全期開始／結束提示
-        [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43'], [this.waveAt, '🐜 蟲潮來襲！', '#a3cb38'], [this.furyAt, '👑 蟻后發怒！', '#ff6b6b'], [this.powderAt, `🧨 火藥分裂！${this.powderCount || 0} 顆炸彈`, '#ff9f43'], [this.flashBoostAt, `⚡ 閃光加成 ×${(this.flashBoost || 1).toFixed(1)}`, '#fff9c4'], [this.eggAt, `🐓 咕咕咕！${this.eggCount || 0} 顆荷包蛋`, '#feca57']].forEach(([at, txt, color]) => {
+        [[this.safeAt, '🛡 安全期！蟲蟲退散', '#7bed9f'], [this.dangerAt, '🐜 蟲蟲危機回來了！', '#ff9f43'], [this.waveAt, '🐜 蟲潮來襲！', '#a3cb38'], [this.furyAt, '👑 蟻后發怒！', '#ff6b6b'], [this.powderAt, `🧨 火藥分裂！${this.powderCount || 0} 顆炸彈`, '#ff9f43'], [this.flashBoostAt, `⚡ 閃光加成 ×${(this.flashBoost || 1).toFixed(1)}`, '#fff9c4'], [this.eggAt, `🐓 咕咕咕！${this.eggCount || 0} 顆荷包蛋`, '#feca57'], [this.boomAt, `💥 爆蛋！+${this.boomPts || 0}`, '#ff6b6b'], [this.buddhaAt, '🙏 佛陀降臨！自動清 3 行', '#f6c453'], [this.vowAt, '🙏 還願：5 秒內消除不計分', '#d1ccc0'], [this.angelAt, '😇 天使降臨！3 秒無敵', '#ffffff'], [this.satanAt, '😈 撒旦詛咒！行被封印', '#ff6b81'], [this.satanReleaseAt, '😈 封印解除！得分 ×2', '#ff4757']].forEach(([at, txt, color]) => {
             if (!at || now - at >= 1500 || this.gameOver) return;
             const t = (now - at) / 1500;
             this.ctx.save();
